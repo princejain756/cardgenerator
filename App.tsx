@@ -367,7 +367,7 @@ const App: React.FC = () => {
       }
       
       const content = await zip.generateAsync({ type: 'blob' });
-      saveAs(content, 'AgileID_Cards.zip');
+      saveAs(content, 'Mani ID_Cards.zip');
     } catch (error) {
       console.error('ZIP Generation failed:', error);
       alert('Failed to generate ZIP file.');
@@ -398,7 +398,7 @@ const App: React.FC = () => {
               <KeyRound size={20} />
             </div>
             <div>
-              <p className="text-slate-400 text-sm">AgileID Pro</p>
+              <p className="text-slate-400 text-sm">Mani ID Pro</p>
               <h1 className="text-2xl font-bold text-white">Sign In</h1>
             </div>
           </div>
@@ -449,7 +449,7 @@ const App: React.FC = () => {
                 <Users className="text-white" size={20} />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-white tracking-tight">AgileID<span className="text-indigo-400">Pro</span></h1>
+                <h1 className="text-xl font-bold text-white tracking-tight">Mani ID<span className="text-indigo-400">Pro</span></h1>
                 <p className="text-xs text-slate-400">Conference Badge Generator</p>
               </div>
             </div>

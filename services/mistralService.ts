@@ -53,7 +53,7 @@ Use -1 if a field is not found. For tracks, list all column indices that contain
         'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000',
-        'X-Title': 'AgileID Pro'
+        'X-Title': 'Mani ID Pro'
       },
       body: JSON.stringify({
         model: 'google/gemma-3-27b-it:free',
@@ -175,7 +175,7 @@ Keep it brief and in plain text format.`;
         'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000',
-        'X-Title': 'AgileID Pro'
+        'X-Title': 'Mani ID Pro'
       },
       body: JSON.stringify({
         model: 'google/gemma-3-27b-it:free',

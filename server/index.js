@@ -22,7 +22,7 @@ app.use(express.json({ limit: '15mb' }));
 
 const dataDir = path.join(__dirname, '..', 'data');
 fs.mkdirSync(dataDir, { recursive: true });
-const dbPath = path.join(dataDir, 'agileid.db');
+const dbPath = path.join(dataDir, 'manid.db');
 const db = new Database(dbPath);
 
 // --- Schema Setup ---

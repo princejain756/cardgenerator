@@ -2,7 +2,7 @@
 
 ## File Upload with Mistral AI Analysis
 
-AgileID Pro now uses **Mistral AI** (via OpenRouter) to intelligently parse and categorize uploaded attendee files.
+Mani ID Pro now uses **Mistral AI** (via OpenRouter) to intelligently parse and categorize uploaded attendee files.
 
 ### Supported File Formats
 - `.txt` - Plain text files

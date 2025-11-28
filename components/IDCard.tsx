@@ -392,7 +392,7 @@ export const IDCard: React.FC<IDCardProps> = ({
                 
                 {/* Modal Footer */}
                 <div className="bg-slate-50 p-4 border-t border-slate-100 text-center">
-                    <p className="text-xs text-slate-400">Verified by AgileID Pro System</p>
+                    <p className="text-xs text-slate-400">Verified by Mani ID Pro System</p>
                 </div>
             </div>
         </div>,

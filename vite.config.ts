@@ -16,6 +16,17 @@ export default defineConfig(({ mode }) => {
           }
         }
       },
+      preview: {
+        port: 4001,
+        host: '0.0.0.0',
+        allowedHosts: ['id.maninfini.com', 'localhost'],
+        proxy: {
+          '/api': {
+            target: apiProxyTarget,
+            changeOrigin: true
+          }
+        }
+      },
       plugins: [react()],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
