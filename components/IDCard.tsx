@@ -659,6 +659,113 @@ export const IDCard: React.FC<IDCardProps> = ({
     );
   };
 
+  const renderEmployeeCard = () => {
+    const heroGradient = { backgroundImage: `linear-gradient(135deg, ${palette.primary}, ${palette.accent})` };
+    const company = data.company || templateSettings.brandName || 'Organization';
+    const tagline = data.passType || templateSettings.brandTagline || '';
+    const employeeId = data.registrationId || data.schoolId || data.barcodeValue || data.id;
+    const joinDate = data.validFrom || data.eventStartDate || '';
+    const expiryDate = data.validTo || data.eventEndDate || '';
+    const emergency = data.contactNumber || templateSettings.contactNumber || '';
+    const qrText = data.barcodeValue || data.registrationId || data.id;
+    const role = data.jobTitle || data.role || templateSettings.badgeLabel || 'Employee';
+
+    return (
+      <div className="flex flex-col h-full bg-white rounded-[26px] overflow-hidden border border-slate-200 shadow-2xl relative">
+        <div className="relative h-40 overflow-hidden">
+          <div className="absolute inset-0" style={heroGradient}></div>
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_30%,rgba(255,255,255,0.16),transparent_40%),radial-gradient(circle_at_80%_20%,rgba(255,255,255,0.12),transparent_35%)]"></div>
+          <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 w-[120%] h-20 bg-white rounded-[50%]"></div>
+          <div className="relative z-10 text-center text-white pt-6 px-4">
+            <p className="text-xs uppercase tracking-[0.18em] text-white/80">Employee ID</p>
+            <h2
+              className="text-lg font-bold leading-tight cursor-pointer"
+              onClick={(e) => { e.stopPropagation(); triggerFieldEdit('company'); }}
+            >
+              {company}
+            </h2>
+            {tagline && (
+              <p
+                className="text-[11px] text-white/80 mt-1 line-clamp-2 cursor-pointer"
+                onClick={(e) => { e.stopPropagation(); triggerFieldEdit('passType'); }}
+              >
+                {tagline}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="relative flex flex-col items-center px-6 -mt-12 z-10">
+          <div className="w-28 h-28 rounded-full border-4 border-white shadow-xl overflow-hidden bg-white">
+            {data.image ? (
+              <img src={data.image} alt={data.name} className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-slate-500">
+                {data.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
+              </div>
+            )}
+          </div>
+
+          <div className="w-full mt-4 space-y-3 text-center">
+            <div
+              className="rounded-lg px-4 py-2 text-white font-bold shadow-lg cursor-pointer"
+              style={{ background: palette.primary }}
+              onClick={(e) => { e.stopPropagation(); triggerFieldEdit('name'); }}
+            >
+              {data.name || 'Employee'}
+            </div>
+            <div
+              className="text-white font-semibold px-4 py-2 shadow-md cursor-pointer"
+              style={{ background: palette.accent, clipPath: 'polygon(0 0, 100% 0, 85% 100%, 0 100%)' }}
+              onClick={(e) => { e.stopPropagation(); triggerFieldEdit('jobTitle'); }}
+            >
+              {role}
+            </div>
+          </div>
+        </div>
+
+        <div className="px-6 mt-6 space-y-2 text-sm text-slate-700">
+          <div className="flex items-center justify-between cursor-pointer" onClick={(e) => { e.stopPropagation(); triggerFieldEdit('registrationId'); }}>
+            <span className="font-semibold text-slate-600">Employee ID</span>
+            <span className="font-mono text-slate-800">{employeeId}</span>
+          </div>
+          {joinDate && (
+            <div className="flex items-center justify-between cursor-pointer" onClick={(e) => { e.stopPropagation(); triggerFieldEdit('validFrom'); }}>
+              <span className="font-semibold text-slate-600">Joining Date</span>
+              <span className="text-slate-800">{formatDateShort(joinDate) || joinDate}</span>
+            </div>
+          )}
+          {expiryDate && (
+            <div className="flex items-center justify-between cursor-pointer" onClick={(e) => { e.stopPropagation(); triggerFieldEdit('validTo'); }}>
+              <span className="font-semibold text-slate-600">Card Expiry</span>
+              <span className="text-slate-800">{formatDateShort(expiryDate) || expiryDate}</span>
+            </div>
+          )}
+          {emergency && (
+            <div className="flex items-center justify-between cursor-pointer" onClick={(e) => { e.stopPropagation(); triggerFieldEdit('contactNumber'); }}>
+              <span className="font-semibold text-slate-600">Emergency</span>
+              <span className="text-slate-800">{emergency}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="px-6 py-4 mt-auto flex items-center justify-between gap-3">
+          <div className="cursor-pointer" onClick={(e) => { e.stopPropagation(); triggerFieldEdit('barcodeValue'); }}>
+            <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500 font-bold">Verify by scanning</p>
+            <p className="text-[12px] text-slate-700">{employeeId}</p>
+          </div>
+          <div className="bg-white border border-slate-200 p-2 rounded-xl shadow">
+            {qrText && qrDataUrl ? (
+              <img src={qrDataUrl} alt="QR code" className="w-16 h-16" />
+            ) : (
+              <QrCode size={60} className="text-slate-600" />
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderMinimalCard = () => (
     <div className="flex flex-col h-full bg-white rounded-[24px] overflow-hidden border border-slate-100 shadow-xl relative group">
       {/* Abstract Background Shapes */}
@@ -797,15 +904,18 @@ export const IDCard: React.FC<IDCardProps> = ({
 
   const renderBody = () => {
     if (template === 'school-classic') return renderSchoolCard();
+    if (template === 'employee-arc') return renderEmployeeCard();
     if (template === 'mono-slim') return renderMinimalCard();
     return renderConferenceCard();
   };
 
   const sizeClass = template === 'conference-modern'
     ? 'w-[340px] h-[600px]'
-    : template === 'mono-slim'
-      ? 'w-[300px] h-[470px]'
-      : 'w-[340px] h-[620px]';
+    : template === 'employee-arc'
+      ? 'w-[340px] h-[580px]'
+      : template === 'mono-slim'
+        ? 'w-[300px] h-[470px]'
+        : 'w-[340px] h-[620px]';
 
   return (
     <>

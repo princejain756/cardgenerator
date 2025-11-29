@@ -68,12 +68,14 @@ const TEMPLATE_PRESETS: TemplatePreset[] = [
   },
   {
     id: 'sunrise',
-    label: 'Sunrise Prep',
+    label: 'Employee ID',
+    template: 'employee-arc',
     blurb: 'Warm orange/coral palette. Pick layout after applying.',
     settings: {
       ...DEFAULT_TEMPLATE_SETTINGS,
-      primaryColor: '#f97316',
-      accentColor: '#fb7185'
+      primaryColor: '#0d8aa4',
+      accentColor: '#0fb4c9',
+      badgeLabel: 'Employee ID'
     }
   },
   {
@@ -137,7 +139,7 @@ const loadStoredTemplateSettings = (fallback: TemplateSettings) => {
 const loadStoredCardTemplate = (fallback: CardTemplate) => {
   try {
     const saved = localStorage.getItem(STORAGE_KEYS.cardTemplate);
-    if (saved === 'school-classic' || saved === 'conference-modern' || saved === 'mono-slim') return saved;
+    if (saved === 'school-classic' || saved === 'conference-modern' || saved === 'mono-slim' || saved === 'employee-arc') return saved as CardTemplate;
   } catch {
     /* ignore */
   }
@@ -900,6 +902,28 @@ const App: React.FC = () => {
     setFocusedField(null);
   };
 
+  const getInlineLabel = (fieldKey: string) => {
+    if (fieldKey.startsWith('custom:')) return fieldKey.replace('custom:', '');
+    if (fieldKey === 'validity') return cardTemplate === 'employee-arc' ? 'Join / Expiry' : 'Validity';
+    const labelMap: Record<string, string> = {
+      name: 'Name',
+      registrationId: cardTemplate === 'employee-arc' ? 'Employee ID' : cardTemplate === 'school-classic' ? 'School ID' : 'Registration ID',
+      passType: cardTemplate === 'employee-arc' ? 'Role / Pass Type' : 'Pass Type',
+      company: cardTemplate === 'employee-arc' ? 'Company' : 'Company / School',
+      jobTitle: cardTemplate === 'employee-arc' ? 'Job Title' : 'Job Title',
+      validFrom: cardTemplate === 'employee-arc' ? 'Join Date' : 'Valid From',
+      validTo: cardTemplate === 'employee-arc' ? 'Card Expiry' : 'Valid To',
+      barcodeValue: cardTemplate === 'employee-arc' ? 'QR / Verify Code' : 'Barcode / QR Value',
+      contactNumber: cardTemplate === 'employee-arc' ? 'Emergency Contact' : 'Contact Number',
+      address: 'Address',
+      eventName: 'Event Name',
+      eventSubtitle: 'Tagline',
+      section: 'Section',
+      className: 'Class'
+    };
+    return labelMap[fieldKey] || fieldKey;
+  };
+
   const handleHideDetectedField = (field: string) => {
     setHiddenFields((prev) => {
       const next = new Set(prev);
@@ -1631,7 +1655,7 @@ const App: React.FC = () => {
             </div>
             <div className="space-y-2">
               <label className="text-xs uppercase tracking-[0.18em] text-slate-400">
-                {inlineEdit.fieldKey.startsWith('custom:') ? inlineEdit.fieldKey.replace('custom:', '') : inlineEdit.fieldKey}
+                {getInlineLabel(inlineEdit.fieldKey)}
               </label>
               <input
                 type="text"

@@ -41,6 +41,7 @@ export const EditModal: React.FC<EditModalProps> = ({
   const isConference = template === 'conference-modern';
   const isSchool = template === 'school-classic';
   const isMono = template === 'mono-slim';
+  const isEmployee = template === 'employee-arc';
   const fieldRefs = React.useRef<Record<string, HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null>>({});
   const assignRef = (key: string) => (el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null) => {
     fieldRefs.current[key] = el;
@@ -146,7 +147,7 @@ export const EditModal: React.FC<EditModalProps> = ({
               </div>
             )}
 
-            {isConference && (
+            {(isConference || isEmployee) && (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1">
@@ -174,49 +175,30 @@ export const EditModal: React.FC<EditModalProps> = ({
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <label className="block text-xs uppercase tracking-[0.18em] text-slate-400">Event Start Date</label>
+                    <label className="block text-xs uppercase tracking-[0.18em] text-slate-400">{isEmployee ? 'Join Date' : 'Event Start Date'}</label>
                     <input
                       type="text"
-                      value={formData.eventStartDate || ''}
-                      onChange={(e) => handleChange('eventStartDate', e.target.value)}
+                      value={formData.validFrom || formData.eventStartDate || ''}
+                      onChange={(e) => {
+                        handleChange('validFrom', e.target.value);
+                        if (!isEmployee) handleChange('eventStartDate', e.target.value);
+                      }}
                       placeholder="dd/mm/yyyy or text"
-                      ref={assignRef('eventStartDate')}
+                      ref={assignRef(isEmployee ? 'validFrom' : 'eventStartDate')}
                       className="w-full bg-slate-900/70 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="block text-xs uppercase tracking-[0.18em] text-slate-400">Event End Date</label>
+                    <label className="block text-xs uppercase tracking-[0.18em] text-slate-400">{isEmployee ? 'Card Expiry' : 'Event End Date'}</label>
                     <input
                       type="text"
-                      value={formData.eventEndDate || ''}
-                      onChange={(e) => handleChange('eventEndDate', e.target.value)}
+                      value={formData.validTo || formData.eventEndDate || ''}
+                      onChange={(e) => {
+                        handleChange('validTo', e.target.value);
+                        if (!isEmployee) handleChange('eventEndDate', e.target.value);
+                      }}
                       placeholder="dd/mm/yyyy or text"
-                      ref={assignRef('eventEndDate')}
-                      className="w-full bg-slate-900/70 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="block text-xs uppercase tracking-[0.18em] text-slate-400">Valid From</label>
-                    <input
-                      type="text"
-                      value={formData.validFrom || ''}
-                      onChange={(e) => handleChange('validFrom', e.target.value)}
-                      placeholder="dd/mm/yyyy or text"
-                      ref={assignRef('validFrom')}
-                      className="w-full bg-slate-900/70 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="block text-xs uppercase tracking-[0.18em] text-slate-400">Valid To</label>
-                    <input
-                      type="text"
-                      value={formData.validTo || ''}
-                      onChange={(e) => handleChange('validTo', e.target.value)}
-                      placeholder="dd/mm/yyyy or text"
-                      ref={assignRef('validTo')}
+                      ref={assignRef(isEmployee ? 'validTo' : 'eventEndDate')}
                       className="w-full bg-slate-900/70 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                     />
                   </div>
@@ -249,7 +231,7 @@ export const EditModal: React.FC<EditModalProps> = ({
                 </div>
               </div>
 
-            {(isConference || isMono) && (
+            {(isConference || isMono || isEmployee) && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <label className="block text-xs uppercase tracking-[0.18em] text-slate-400">Job Title / What they do</label>
@@ -381,17 +363,8 @@ export const EditModal: React.FC<EditModalProps> = ({
                 </div>
             </div>
 
-            {isConference && (
+            {(isConference || isEmployee) && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="block text-xs uppercase tracking-[0.18em] text-slate-400">Sponsored By</label>
-                  <input
-                    type="text"
-                    value={formData.sponsor || ''}
-                    onChange={(e) => handleChange('sponsor', e.target.value)}
-                    className="w-full bg-slate-900/70 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                  />
-                </div>
                 <div className="space-y-1">
                   <label className="block text-xs uppercase tracking-[0.18em] text-slate-400">Barcode / QR Value</label>
                   <input
@@ -401,6 +374,17 @@ export const EditModal: React.FC<EditModalProps> = ({
                     className="w-full bg-slate-900/70 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                   />
                 </div>
+                {isConference && (
+                  <div className="space-y-1">
+                    <label className="block text-xs uppercase tracking-[0.18em] text-slate-400">Sponsored By</label>
+                    <input
+                      type="text"
+                      value={formData.sponsor || ''}
+                      onChange={(e) => handleChange('sponsor', e.target.value)}
+                      className="w-full bg-slate-900/70 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                    />
+                  </div>
+                )}
               </div>
             )}
 

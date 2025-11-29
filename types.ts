@@ -51,7 +51,7 @@ export interface User {
   role: 'admin' | 'user';
 }
 
-export type CardTemplate = 'school-classic' | 'conference-modern' | 'mono-slim';
+export type CardTemplate = 'school-classic' | 'conference-modern' | 'mono-slim' | 'employee-arc';
 
 export interface CardLayout {
   header?: string[];  // Fields to display in header area
