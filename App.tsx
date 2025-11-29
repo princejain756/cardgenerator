@@ -1586,7 +1586,10 @@ const App: React.FC = () => {
               </table>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 justify-items-center print:block print:w-full print:gap-0">
+            <div
+              className="grid gap-8 justify-items-center print:block print:w-full print:gap-0"
+              style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))' }}
+            >
               {filteredAttendees.map((attendee) => (
                 <div key={attendee.id} className="print:inline-block print:m-4 print:align-top">
                   <IDCard

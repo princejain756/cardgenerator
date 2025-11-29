@@ -920,7 +920,7 @@ export const IDCard: React.FC<IDCardProps> = ({
     <>
       <div
         id={`card-${data.id}`}
-        className={`relative ${sizeClass} bg-white rounded-[28px] overflow-hidden shadow-2xl flex flex-col print-break-inside-avoid transform transition-all hover:scale-[1.02] duration-300 group border border-slate-200 ${isSelected ? 'ring-4 ring-indigo-500 ring-offset-4 ring-offset-slate-900' : ''}`}
+        className={`relative ${sizeClass} bg-white rounded-[28px] overflow-hidden shadow-2xl flex flex-col print-break-inside-avoid transform transition-all duration-200 group border border-slate-200 hover:-translate-y-1 ${isSelected ? 'ring-4 ring-indigo-500 ring-offset-4 ring-offset-slate-900' : ''}`}
       >
         <div className="absolute top-4 left-4 z-30 no-print no-export">
           <button
