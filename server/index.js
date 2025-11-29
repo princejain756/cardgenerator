@@ -44,9 +44,21 @@ CREATE TABLE IF NOT EXISTS attendees (
   role TEXT,
   tracks TEXT,
   image TEXT,
+  extras TEXT,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `);
+
+// Migration helper: ensure extras column exists for older databases
+const ensureColumn = (table, column, type) => {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  const hasColumn = columns.some((col) => col.name === column);
+  if (!hasColumn) {
+    db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`).run();
+  }
+};
+
+ensureColumn('attendees', 'extras', 'TEXT');
 
 // --- Admin bootstrap ---
 const ensureAdmin = () => {
@@ -60,8 +72,62 @@ const ensureAdmin = () => {
 ensureAdmin();
 
 // --- Helpers ---
+const parseExtras = (value) => {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (err) {
+    console.warn('Unable to parse extras payload', err);
+    return {};
+  }
+};
+
+const buildExtrasPayload = (attendee = {}, existingExtras = {}) => {
+  const merged = {
+    ...existingExtras,
+    eventName: attendee.eventName ?? existingExtras.eventName,
+    eventSubtitle: attendee.eventSubtitle ?? existingExtras.eventSubtitle,
+    eventStartDate: attendee.eventStartDate ?? existingExtras.eventStartDate,
+    eventEndDate: attendee.eventEndDate ?? existingExtras.eventEndDate,
+    validFrom: attendee.validFrom ?? existingExtras.validFrom,
+    validTo: attendee.validTo ?? existingExtras.validTo,
+    sponsor: attendee.sponsor ?? existingExtras.sponsor,
+    barcodeValue: attendee.barcodeValue ?? existingExtras.barcodeValue,
+    jobTitle: attendee.jobTitle ?? existingExtras.jobTitle,
+    schoolId: attendee.schoolId ?? existingExtras.schoolId,
+    className: attendee.className ?? existingExtras.className,
+    section: attendee.section ?? existingExtras.section,
+    fatherName: attendee.fatherName ?? existingExtras.fatherName,
+    motherName: attendee.motherName ?? existingExtras.motherName,
+    dob: attendee.dob ?? existingExtras.dob,
+    contactNumber: attendee.contactNumber ?? existingExtras.contactNumber,
+    address: attendee.address ?? existingExtras.address,
+    bloodGroup: attendee.bloodGroup ?? existingExtras.bloodGroup,
+    extraFields: {
+      ...(existingExtras.extraFields || {}),
+      ...(attendee.extraFields || {})
+    }
+  };
+
+  Object.keys(merged).forEach((key) => {
+    if (merged[key] === undefined || merged[key] === null || merged[key] === '') {
+      delete merged[key];
+    }
+  });
+
+  if (merged.extraFields && Object.keys(merged.extraFields).length === 0) {
+    delete merged.extraFields;
+  }
+
+  return merged;
+};
+
 const toAttendeeResponse = (row) => {
   if (!row) return null;
+  const extras = parseExtras(row.extras);
+  const extraFields = extras.extraFields || {};
+
   return {
     id: row.id,
     registrationId: row.registration_id,
@@ -70,7 +136,26 @@ const toAttendeeResponse = (row) => {
     passType: row.pass_type,
     role: row.role,
     tracks: row.tracks ? JSON.parse(row.tracks) : [],
-    image: row.image
+    image: row.image,
+    eventName: extras.eventName,
+    eventSubtitle: extras.eventSubtitle,
+    eventStartDate: extras.eventStartDate,
+    eventEndDate: extras.eventEndDate,
+    validFrom: extras.validFrom,
+    validTo: extras.validTo,
+    sponsor: extras.sponsor,
+    barcodeValue: extras.barcodeValue,
+    jobTitle: extras.jobTitle,
+    schoolId: extras.schoolId || row.registration_id,
+    className: extras.className,
+    section: extras.section,
+    fatherName: extras.fatherName,
+    motherName: extras.motherName,
+    dob: extras.dob,
+    contactNumber: extras.contactNumber,
+    address: extras.address,
+    bloodGroup: extras.bloodGroup,
+    extraFields
   };
 };
 
@@ -129,11 +214,12 @@ app.get('/api/attendees', authMiddleware, (req, res) => {
 app.post('/api/attendees/import', authMiddleware, (req, res) => {
   const { attendees } = req.body || {};
   if (!Array.isArray(attendees)) return res.status(400).json({ message: 'attendees must be an array' });
-  const insert = db.prepare(`INSERT INTO attendees (id, registration_id, name, company, pass_type, role, tracks, image, updated_at)
-    VALUES (@id, @registration_id, @name, @company, @pass_type, @role, @tracks, @image, CURRENT_TIMESTAMP)`);
+  const insert = db.prepare(`INSERT INTO attendees (id, registration_id, name, company, pass_type, role, tracks, image, extras, updated_at)
+    VALUES (@id, @registration_id, @name, @company, @pass_type, @role, @tracks, @image, @extras, CURRENT_TIMESTAMP)`);
   const replaceAll = db.transaction((items) => {
     db.prepare('DELETE FROM attendees').run();
     items.forEach((a) => {
+      const extrasPayload = buildExtrasPayload(a);
       const payload = {
         id: a.id || `att-${Date.now()}-${Math.random().toString(16).slice(2)}`,
         registration_id: a.registrationId || '',
@@ -142,7 +228,8 @@ app.post('/api/attendees/import', authMiddleware, (req, res) => {
         pass_type: a.passType || '',
         role: a.role || 'Attendee',
         tracks: JSON.stringify(a.tracks || []),
-        image: a.image || null
+        image: a.image || null,
+        extras: Object.keys(extrasPayload).length ? JSON.stringify(extrasPayload) : null
       };
       insert.run(payload);
     });
@@ -154,9 +241,37 @@ app.post('/api/attendees/import', authMiddleware, (req, res) => {
 app.patch('/api/attendees/bulk', authMiddleware, (req, res) => {
   const { ids, data } = req.body || {};
   if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ message: 'ids required' });
-  const allowed = ['registrationId', 'name', 'company', 'passType', 'role', 'tracks', 'image'];
+  const allowed = [
+    'registrationId',
+    'name',
+    'company',
+    'passType',
+    'role',
+    'tracks',
+    'image',
+    'eventName',
+    'eventSubtitle',
+    'eventStartDate',
+    'eventEndDate',
+    'validFrom',
+    'validTo',
+    'sponsor',
+    'barcodeValue',
+    'jobTitle',
+    'schoolId',
+    'className',
+    'section',
+    'fatherName',
+    'motherName',
+    'dob',
+    'contactNumber',
+    'address',
+    'bloodGroup',
+    'extraFields'
+  ];
   const updates = Object.keys(data || {}).filter((k) => allowed.includes(k));
   if (updates.length === 0) return res.status(400).json({ message: 'No valid fields to update' });
+
   const updateStmt = db.prepare(`UPDATE attendees SET 
     registration_id = COALESCE(@registrationId, registration_id),
     name = COALESCE(@name, name),
@@ -165,10 +280,17 @@ app.patch('/api/attendees/bulk', authMiddleware, (req, res) => {
     role = COALESCE(@role, role),
     tracks = COALESCE(@tracks, tracks),
     image = COALESCE(@image, image),
+    extras = COALESCE(@extras, extras),
     updated_at = CURRENT_TIMESTAMP
     WHERE id = @id`);
+
   const tx = db.transaction((items) => {
     items.forEach((id) => {
+      const existing = db.prepare('SELECT * FROM attendees WHERE id = ?').get(id);
+      const existingExtras = parseExtras(existing?.extras);
+      const nextExtras = buildExtrasPayload(data, existingExtras);
+      const extras = Object.keys(nextExtras).length ? JSON.stringify(nextExtras) : existing?.extras;
+
       updateStmt.run({
         id,
         registrationId: data.registrationId,
@@ -177,7 +299,8 @@ app.patch('/api/attendees/bulk', authMiddleware, (req, res) => {
         passType: data.passType,
         role: data.role,
         tracks: data.tracks ? JSON.stringify(data.tracks) : undefined,
-        image: data.image
+        image: data.image,
+        extras
       });
     });
   });
@@ -188,6 +311,11 @@ app.patch('/api/attendees/bulk', authMiddleware, (req, res) => {
 app.patch('/api/attendees/:id', authMiddleware, (req, res) => {
   const { id } = req.params;
   const payload = req.body || {};
+  const existingRow = db.prepare('SELECT * FROM attendees WHERE id = ?').get(id);
+  const existingExtras = parseExtras(existingRow?.extras);
+  const nextExtras = buildExtrasPayload(payload, existingExtras);
+  const extras = Object.keys(nextExtras).length ? JSON.stringify(nextExtras) : existingRow?.extras;
+
   const update = db.prepare(`UPDATE attendees SET 
     registration_id = COALESCE(@registrationId, registration_id),
     name = COALESCE(@name, name),
@@ -196,6 +324,7 @@ app.patch('/api/attendees/:id', authMiddleware, (req, res) => {
     role = COALESCE(@role, role),
     tracks = COALESCE(@tracks, tracks),
     image = COALESCE(@image, image),
+    extras = COALESCE(@extras, extras),
     updated_at = CURRENT_TIMESTAMP
     WHERE id = @id`);
   update.run({
@@ -206,7 +335,8 @@ app.patch('/api/attendees/:id', authMiddleware, (req, res) => {
     passType: payload.passType,
     role: payload.role,
     tracks: payload.tracks ? JSON.stringify(payload.tracks) : undefined,
-    image: payload.image
+    image: payload.image,
+    extras
   });
   const updated = db.prepare('SELECT * FROM attendees WHERE id = ?').get(id);
   res.json(toAttendeeResponse(updated));

@@ -67,7 +67,11 @@ export const parseTSVData = (text: string): Attendee[] => {
       company: company,
       passType: mainPass,
       tracks: tracks,
-      role: role
+      role: role,
+      schoolId: columns[1]?.trim() || undefined,
+      className: mainPass,
+      contactNumber: columns[5]?.trim() || undefined,
+      extraFields: {}
     });
   });
 

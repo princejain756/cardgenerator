@@ -36,6 +36,14 @@ export default defineConfig(({ mode }) => {
         alias: {
           '@': path.resolve(__dirname, '.'),
         }
+      },
+      optimizeDeps: {
+        exclude: ['onnxruntime-web', 'onnxruntime-web/webgpu']
+      },
+      build: {
+        rollupOptions: {
+          external: ['onnxruntime-web', 'onnxruntime-web/webgpu']
+        }
       }
     };
 });
