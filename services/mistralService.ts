@@ -58,8 +58,8 @@ IMPORTANT: Also detect school-level information that applies to ALL students (no
 Return JSON ONLY in this exact shape:
 {
   "schoolMetadata": {
-    "schoolName": "Cambridge Public School",
-    "contactNumber": "+91 93394 00600"
+    "schoolName": "Sample School Name",
+    "contactNumber": "+91 90000 00000"
   },
   "mapping": {
     "name": 0,
@@ -211,7 +211,7 @@ Rules:
       const getVal = (idx?: number) => (typeof idx === 'number' && idx >= 0 && idx < columns.length ? columns[idx] : '').trim();
 
       const name = getVal(mapping.name) || `Student ${i + 1}`;
-      const company = getVal(mapping.company) || 'School';
+      const company = getVal(mapping.company) || 'Organization';
       const passType = getVal(mapping.passType) || getVal(mapping.className) || 'General Entry';
       const registrationId = getVal(mapping.registrationId) || `AUTO_${i + 1}`;
       const schoolId = getVal(mapping.schoolId) || registrationId;

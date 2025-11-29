@@ -23,50 +23,66 @@ import {
   createUser as apiCreateUser
 } from './services/api';
 
-const TEMPLATE_PRESETS: Array<{ id: string; label: string; template: CardTemplate; settings: TemplateSettings; blurb: string; }> = [
+type TemplatePreset = {
+  id: string;
+  label: string;
+  template?: CardTemplate; // optional: if not provided, keep current layout
+  settings: TemplateSettings;
+  blurb: string;
+};
+
+const DEFAULT_TEMPLATE_SETTINGS: TemplateSettings = {
+  brandName: '',
+  brandTagline: '',
+  contactNumber: '',
+  address: '',
+  footerNote: '',
+  primaryColor: '#4f46e5',
+  accentColor: '#22d3ee',
+  badgeLabel: ''
+};
+
+const DEFAULT_CARD_TEMPLATE: CardTemplate = 'conference-modern';
+
+const TEMPLATE_PRESETS: TemplatePreset[] = [
+  {
+    id: 'blank',
+    label: 'Clean Start',
+    blurb: 'Begin with empty fields; choose your own layout.',
+    settings: {
+      ...DEFAULT_TEMPLATE_SETTINGS,
+      primaryColor: '#475569',
+      accentColor: '#0ea5e9'
+    }
+  },
   {
     id: 'royal-school',
-    label: 'Royal School',
+    label: 'School',
     template: 'school-classic',
-    blurb: 'Blue gradient badge with signature footer for govt. recognised schools.',
+    blurb: 'Deep blue palette with crisp contrast for academic IDs.',
     settings: {
-      brandName: 'Cambridge Public School',
-      brandTagline: 'Govt. Recognised | District Board',
-      contactNumber: '+91 93394 00600',
-      address: 'H.No. 74, Nehru Market, Chennai',
-      footerNote: 'Principal Sign.',
+      ...DEFAULT_TEMPLATE_SETTINGS,
       primaryColor: '#1d4ed8',
-      accentColor: '#60a5fa',
-      badgeLabel: 'Student ID'
+      accentColor: '#60a5fa'
     }
   },
   {
     id: 'sunrise',
     label: 'Sunrise Prep',
-    template: 'school-classic',
-    blurb: 'Warm orange and coral palette with a softer badge tone.',
+    blurb: 'Warm orange/coral palette. Pick layout after applying.',
     settings: {
-      brandName: 'Sunrise Preparatory',
-      brandTagline: 'CBSE | Day Boarding',
-      contactNumber: '+91 98980 12345',
-      address: 'Plot 22, Lake Road, Pune',
-      footerNote: 'Principal Sign.',
+      ...DEFAULT_TEMPLATE_SETTINGS,
       primaryColor: '#f97316',
-      accentColor: '#fb7185',
-      badgeLabel: 'Campus ID'
+      accentColor: '#fb7185'
     }
   },
   {
     id: 'conference',
     label: 'Conference Classic',
     template: 'conference-modern',
-    blurb: 'Expo-style pass with skyline header, validity, sponsor & barcode.',
+    blurb: 'Expo-style pass with skyline header, sponsor band, and barcode.',
     settings: {
-      brandName: '',
-      brandTagline: '',
-      contactNumber: '',
-      address: '',
-      footerNote: '',
+      ...DEFAULT_TEMPLATE_SETTINGS,
       primaryColor: '#0f172a',
       accentColor: '#2563eb',
       badgeLabel: 'Delegate'
@@ -76,16 +92,11 @@ const TEMPLATE_PRESETS: Array<{ id: string; label: string; template: CardTemplat
     id: 'mono',
     label: 'Mono Minimal',
     template: 'mono-slim',
-    blurb: 'Compact monochrome layout for quick previews.',
+    blurb: 'Compact monochrome layout.',
     settings: {
-      brandName: 'Minimal Card',
-      brandTagline: 'Sleek',
-      contactNumber: '+91 90000 00000',
-      address: 'Anywhere',
-      footerNote: 'Sign',
+      ...DEFAULT_TEMPLATE_SETTINGS,
       primaryColor: '#0f172a',
-      accentColor: '#1e293b',
-      badgeLabel: 'ID'
+      accentColor: '#1e293b'
     }
   }
 ];
@@ -100,10 +111,23 @@ const STORAGE_KEYS = {
   activePreset: 'cardgen_active_preset'
 };
 
+const isLegacyMockSettings = (settings: Partial<TemplateSettings>) => {
+  const legacyNames = ['Cambridge Public School', 'Sunrise Preparatory', 'Minimal Card'];
+  const legacyAddress = settings.address || '';
+  const legacyContact = settings.contactNumber || '';
+  return legacyNames.includes(settings.brandName || '') ||
+    legacyAddress.toLowerCase().includes('nehru market') ||
+    legacyContact.includes('93394 00600');
+};
+
 const loadStoredTemplateSettings = (fallback: TemplateSettings) => {
   try {
     const saved = localStorage.getItem(STORAGE_KEYS.templateSettings);
-    if (saved) return { ...fallback, ...JSON.parse(saved) };
+    if (saved) {
+      const parsed = { ...fallback, ...JSON.parse(saved) };
+      if (isLegacyMockSettings(parsed)) return fallback;
+      return parsed;
+    }
   } catch {
     /* ignore */
   }
@@ -197,8 +221,8 @@ const App: React.FC = () => {
   const [detectedFields, setDetectedFields] = useState<string[]>([]);
   const [hiddenFields, setHiddenFields] = useState<Set<string>>(() => loadStoredHiddenFields());
   const [customFields, setCustomFields] = useState<string[]>(() => loadStoredCustomFields());
-  const [cardTemplate, setCardTemplate] = useState<CardTemplate>(() => loadStoredCardTemplate(TEMPLATE_PRESETS[0].template));
-  const [templateSettings, setTemplateSettings] = useState<TemplateSettings>(() => loadStoredTemplateSettings({ ...TEMPLATE_PRESETS[0].settings }));
+  const [cardTemplate, setCardTemplate] = useState<CardTemplate>(() => loadStoredCardTemplate(DEFAULT_CARD_TEMPLATE));
+  const [templateSettings, setTemplateSettings] = useState<TemplateSettings>(() => loadStoredTemplateSettings({ ...DEFAULT_TEMPLATE_SETTINGS }));
   const [activePresetId, setActivePresetId] = useState<string>(() => loadStoredPreset(TEMPLATE_PRESETS[0].id));
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [inlineEdit, setInlineEdit] = useState<{ attendee: Attendee | null; fieldKey: string | null; value: string }>({ attendee: null, fieldKey: null, value: '' });
@@ -300,18 +324,20 @@ const App: React.FC = () => {
     // Add static layout fields that appear on cards
     if (items.length > 0) {
       fields.add('Principal Sign');
-      fields.add('School');
+      fields.add('Organization');
     }
 
     const finalFields = Array.from(fields).filter((f) => !hiddenFields.has(f));
     setDetectedFields(finalFields);
   };
 
-  const handlePresetApply = (presetId: string) => {
+  const handlePresetApply = (presetId: string, templateOverride?: CardTemplate) => {
     const preset = TEMPLATE_PRESETS.find((p) => p.id === presetId);
     if (!preset) return;
-    setCardTemplate(preset.template);
-    setTemplateSettings({ ...preset.settings });
+    setTemplateSettings({ ...DEFAULT_TEMPLATE_SETTINGS, ...preset.settings });
+    if (preset.template || templateOverride) {
+      setCardTemplate(templateOverride || preset.template || cardTemplate);
+    }
     setActivePresetId(presetId);
   };
 
@@ -599,7 +625,7 @@ const App: React.FC = () => {
     const draft: Attendee = {
       id: `draft-${Date.now()}`,
       name: '',
-      company: templateSettings.brandName || 'School',
+      company: templateSettings.brandName || 'Organization',
       passType: templateSettings.badgeLabel || 'General Entry',
       registrationId: '',
       eventName: templateSettings.brandName,
@@ -682,7 +708,7 @@ const App: React.FC = () => {
           registrationId: updatedData.registrationId || editingAttendee.registrationId || `manual-${Date.now()}`,
           name: updatedData.name || 'New Attendee',
           passType: updatedData.passType || editingAttendee.passType || 'General Entry',
-          company: updatedData.company || editingAttendee.company || 'School',
+          company: updatedData.company || editingAttendee.company || 'Organization',
           role: updatedData.role || 'Attendee',
           tracks: (updatedData.tracks as string[]) || editingAttendee.tracks || [],
           schoolId: updatedData.schoolId || updatedData.registrationId || editingAttendee.registrationId,
@@ -1159,15 +1185,18 @@ const App: React.FC = () => {
                   const isActive = activePresetId === preset.id;
                   const previewStyle = { background: `linear-gradient(135deg, ${preset.settings.primaryColor}, ${preset.settings.accentColor})` };
                   return (
-                    <button
+                    <div
                       key={preset.id}
                       onClick={() => handlePresetApply(preset.id)}
-                      className={`text-left bg-slate-900/50 hover:bg-slate-900 border border-slate-700 rounded-xl p-3 transition-all ${isActive ? 'border-indigo-500 shadow-lg shadow-indigo-500/20' : ''}`}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handlePresetApply(preset.id); }}
+                      role="button"
+                      tabIndex={0}
+                      className={`text-left bg-slate-900/50 hover:bg-slate-900 border border-slate-700 rounded-xl p-3 transition-all outline-none focus:ring-2 focus:ring-indigo-500/50 ${isActive ? 'border-indigo-500 shadow-lg shadow-indigo-500/20' : ''}`}
                     >
                       <div className="h-16 rounded-lg mb-2" style={previewStyle}></div>
                       <div className="text-sm font-semibold text-white">{preset.label}</div>
                       <p className="text-xs text-slate-400 leading-snug">{preset.blurb}</p>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -1186,7 +1215,7 @@ const App: React.FC = () => {
                     value={templateSettings.brandName}
                     onChange={(e) => updateTemplateSetting('brandName', e.target.value)}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
-                    placeholder="School Name"
+                    placeholder="School / Org name"
                   />
                 </div>
                 <div className="space-y-1 min-w-0">
@@ -1195,7 +1224,7 @@ const App: React.FC = () => {
                     value={templateSettings.brandTagline}
                     onChange={(e) => updateTemplateSetting('brandTagline', e.target.value)}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
-                    placeholder="Govt. Recognised | District"
+                    placeholder="Tagline or subtext"
                   />
                 </div>
                 <div className="space-y-1 min-w-0">
@@ -1204,7 +1233,7 @@ const App: React.FC = () => {
                     value={templateSettings.badgeLabel || ''}
                     onChange={(e) => updateTemplateSetting('badgeLabel', e.target.value)}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
-                    placeholder="Student ID"
+                    placeholder="ID type (Student, Delegate...)"
                   />
                 </div>
                 <div className="space-y-1 min-w-0">
@@ -1222,7 +1251,7 @@ const App: React.FC = () => {
                     value={templateSettings.address}
                     onChange={(e) => updateTemplateSetting('address', e.target.value)}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
-                    placeholder="H.No. 74, Nehru Market, Chennai"
+                    placeholder="Address, city, state or any footer text"
                   />
                 </div>
                 <div className="space-y-1 sm:col-span-2 min-w-0">
@@ -1231,7 +1260,7 @@ const App: React.FC = () => {
                     value={templateSettings.footerNote}
                     onChange={(e) => updateTemplateSetting('footerNote', e.target.value)}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
-                    placeholder="Principal Sign."
+                    placeholder="Authorized signatory / footer note"
                   />
                 </div>
                 <div className="space-y-1 min-w-0">
