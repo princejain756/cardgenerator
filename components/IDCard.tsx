@@ -609,9 +609,9 @@ export const IDCard: React.FC<IDCardProps> = ({
           )}
 
           {(customFields.length > 0 || sponsor || barcodeText) && (
-            <div className="mt-auto pt-5">
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 flex items-start gap-3 shadow-inner">
-                <div className="flex-1">
+            <div className="mt-auto pt-5 space-y-4">
+              {(customFields.length > 0 || sponsor) && (
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 shadow-inner">
                   {customFields.length > 0 && (
                     <div className="grid grid-cols-2 gap-2 auto-rows-fr">
                       {customFields.slice(0, 8).map(({ key, value }) => (
@@ -630,28 +630,29 @@ export const IDCard: React.FC<IDCardProps> = ({
                     <p className="mt-2 text-[10px] text-slate-500">+{customFields.length - 8} more fields hidden</p>
                   )}
                   {sponsor && (
-                    <div className="mt-2">
+                    <div className="mt-3">
                       <p className="text-[10px] uppercase text-slate-400 font-bold tracking-[0.16em]">Sponsored By</p>
                       <p className="text-sm font-semibold text-slate-800 line-clamp-2">{sponsor}</p>
                     </div>
                   )}
                 </div>
-                {barcodeText && (
-                  <div className="flex items-center gap-2">
-                    <div className="text-right">
-                      <p className="text-[10px] uppercase text-slate-400 font-bold tracking-[0.14em]">Scan / Barcode</p>
-                      <p className="text-[11px] font-mono text-slate-600">{barcodeText}</p>
-                    </div>
-                    <div className="bg-white p-2 rounded-xl shadow-lg border border-slate-200">
-                      {qrDataUrl ? (
-                        <img src={qrDataUrl} alt="QR" className="w-14 h-14" />
-                      ) : (
-                        <QrCode size={44} />
-                      )}
-                    </div>
+              )}
+
+              {barcodeText && (
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 flex items-center justify-between shadow-inner">
+                  <div className="text-left">
+                    <p className="text-[10px] uppercase text-slate-400 font-bold tracking-[0.14em]">Scan / Barcode</p>
+                    <p className="text-[11px] font-mono text-slate-600">{barcodeText}</p>
                   </div>
-                )}
-              </div>
+                  <div className="bg-white p-2 rounded-xl shadow-lg border border-slate-200">
+                    {qrDataUrl ? (
+                      <img src={qrDataUrl} alt="QR" className="w-14 h-14" />
+                    ) : (
+                      <QrCode size={44} />
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
