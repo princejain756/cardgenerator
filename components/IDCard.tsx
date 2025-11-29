@@ -909,13 +909,11 @@ export const IDCard: React.FC<IDCardProps> = ({
     return renderConferenceCard();
   };
 
-  const sizeClass = template === 'conference-modern'
-    ? 'w-[340px] h-[600px]'
-    : template === 'employee-arc'
-      ? 'w-[340px] h-[580px]'
-      : template === 'mono-slim'
-        ? 'w-[300px] h-[470px]'
-        : 'w-[340px] h-[620px]';
+  // Keep a generous, uniform card footprint so no layout gets cropped and all cards align visually.
+  const sizeClass = (() => {
+    const base = 'w-[360px] h-[720px]';
+    return base;
+  })();
 
   return (
     <>
