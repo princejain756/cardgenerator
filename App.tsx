@@ -195,6 +195,15 @@ const isLikelyDate = (value?: string) => {
   return patterns.some((re) => re.test(trimmed));
 };
 
+type SupplementalImageEntry = {
+  id: string;
+  file: File;
+  removeBackground: boolean;
+  isProcessing: boolean;
+  processed: boolean;
+  error?: string;
+};
+
 const App: React.FC = () => {
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -206,7 +215,7 @@ const App: React.FC = () => {
   const [filenameTemplate, setFilenameTemplate] = useState('{name}_IDCARD');
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('authToken'));
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [uploadedImages, setUploadedImages] = useState<File[]>([]);
+  const [uploadedImages, setUploadedImages] = useState<SupplementalImageEntry[]>([]);
   const [showImageHelp, setShowImageHelp] = useState(false);
   const [imageAssignmentStatus, setImageAssignmentStatus] = useState<string | null>(null);
   const [imageAssignmentBatch, setImageAssignmentBatch] = useState(0);
@@ -541,6 +550,15 @@ const App: React.FC = () => {
     }
   };
 
+  const ensureBlobFromSource = async (source: File | Blob | string): Promise<Blob> => {
+    if (typeof source === 'string') {
+      const response = await fetch(source);
+      if (!response.ok) throw new Error('Failed to load previous image');
+      return await response.blob();
+    }
+    return source;
+  };
+
   const handleBatchImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) {
@@ -550,10 +568,76 @@ const App: React.FC = () => {
     const sortedFiles = Array.from(files).sort((a, b) =>
       a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
     );
-    setUploadedImages(sortedFiles);
+    const entries = sortedFiles.map((file, index) => ({
+      id: `${file.name}-${Date.now()}-${index}`,
+      file,
+      removeBackground: false,
+      isProcessing: false,
+      processed: false
+    }));
+    setUploadedImages(entries);
     setImageAssignmentStatus(null);
     setImageAssignmentBatch((prev) => prev + 1);
     event.target.value = '';
+  };
+
+  const toggleSupplementalBgSelection = (id: string) => {
+    setUploadedImages(prev =>
+      prev.map(entry =>
+        entry.id === id ? { ...entry, removeBackground: !entry.removeBackground } : entry
+      )
+    );
+  };
+
+  const setSupplementalBgSelection = (value: boolean) => {
+    setUploadedImages(prev => prev.map(entry => ({ ...entry, removeBackground: value })));
+  };
+
+  const processSelectedSupplementalRemovals = async () => {
+    const entriesToProcess = uploadedImages.filter(entry => entry.removeBackground);
+    if (!entriesToProcess.length) {
+      setImageAssignmentStatus('Select at least one image to remove the background.');
+      return;
+    }
+    if (!token) {
+      setImageAssignmentStatus('Log in to process background removal for supplemental images.');
+      return;
+    }
+
+    setImageAssignmentStatus('Removing backgrounds from selected images...');
+    let processedCount = 0;
+    for (const entry of entriesToProcess) {
+      setUploadedImages(prev =>
+        prev.map(item => (item.id === entry.id ? { ...item, isProcessing: true, error: undefined } : item))
+      );
+      try {
+        const blob = await ensureBlobFromSource(entry.file);
+        const processedBlob = await removeBackground(blob);
+        const processedFile = new File([processedBlob], entry.file.name, { type: processedBlob.type });
+        setUploadedImages(prev =>
+          prev.map(item =>
+            item.id === entry.id
+              ? { ...item, file: processedFile, isProcessing: false, processed: true }
+              : item
+          )
+        );
+        processedCount += 1;
+      } catch (error) {
+        console.error('Supplemental background removal failed:', error);
+        setUploadedImages(prev =>
+          prev.map(item =>
+            item.id === entry.id ? { ...item, isProcessing: false, error: 'Background removal failed' } : item
+          )
+        );
+      }
+    }
+
+    if (processedCount > 0) {
+      setImageAssignmentStatus(`${processedCount} supplementary image${processedCount > 1 ? 's' : ''} processed with background removal.`);
+      setImageAssignmentBatch(prev => prev + 1);
+    } else {
+      setImageAssignmentStatus('No supplementary images were processed for background removal.');
+    }
   };
 
   const handleAiAnalysis = async () => {
@@ -592,6 +676,9 @@ const App: React.FC = () => {
     const types = new Set(attendees.map(a => a.passType));
     return ['All', ...Array.from(types)];
   }, [attendees]);
+
+  const hasSupplementalSelection = uploadedImages.some(entry => entry.removeBackground);
+  const isSupplementalProcessing = uploadedImages.some(entry => entry.isProcessing);
 
   const imageAssignmentStatusColor = imageAssignmentStatus
     ? imageAssignmentStatus.toLowerCase().includes('assigned automatically')
@@ -763,24 +850,40 @@ const App: React.FC = () => {
   };
 
   // --- Image Upload Logic ---
-  const handleImageUpload = async (attendeeId: string, file: File) => {
+  const handleImageUpload = async (
+    attendeeId: string,
+    source: File | Blob | string,
+    options?: { removeBackground?: boolean }
+  ) => {
     if (!token) return;
+    const shouldRemoveBackground = options?.removeBackground ?? false;
+    const markProcessing = (value: boolean) => {
+      setAttendees(prev => prev.map(a => a.id === attendeeId ? { ...a, isProcessingImage: value } : a));
+    };
 
     try {
-      setAttendees(prev => prev.map(a =>
-        a.id === attendeeId ? { ...a, isProcessingImage: true } : a
-      ));
-      const blob = await removeBackground(file);
+      let blob = await ensureBlobFromSource(source);
+      if (shouldRemoveBackground) {
+        markProcessing(true);
+        blob = await removeBackground(blob);
+      }
       const imageUrl = await readBlobAsDataUrl(blob);
       await submitImageUpdate(attendeeId, imageUrl);
     } catch (error) {
       console.error('Failed to process image:', error);
-      alert('Failed to process image. Using original image instead.');
+      if (shouldRemoveBackground) {
+        alert('Failed to process image. Using original image instead.');
+      }
       try {
-        const imageUrl = await readBlobAsDataUrl(file);
+        const fallbackBlob = await ensureBlobFromSource(source);
+        const imageUrl = await readBlobAsDataUrl(fallbackBlob);
         await submitImageUpdate(attendeeId, imageUrl);
       } catch (fallbackError) {
         console.error('Fallback image assignment failed:', fallbackError);
+      }
+    } finally {
+      if (shouldRemoveBackground) {
+        markProcessing(false);
       }
     }
   };
@@ -801,6 +904,15 @@ const App: React.FC = () => {
     const payload = { ...updated, image: imageData, isProcessingImage: false };
     await apiUpdateAttendee(token, attendeeId, payload);
     setAttendees(prev => prev.map(a => a.id === attendeeId ? payload : a));
+  };
+
+  const requestBackgroundRemoval = (attendeeId: string) => {
+    const attendee = attendees.find(a => a.id === attendeeId);
+    if (!attendee || !attendee.image) {
+      alert('Upload an image first to remove the background.');
+      return;
+    }
+    handleImageUpload(attendeeId, attendee.image, { removeBackground: true });
   };
 
   const assignImageWithoutProcessing = async (attendeeId: string, file: File) => {
@@ -929,7 +1041,8 @@ const App: React.FC = () => {
       setImageAssignmentStatus('Assigning images to cards...');
       const assignedAttendeeIds = new Set<string>();
       const unmatchedFiles: File[] = [];
-      for (const file of uploadedImages) {
+      for (const entry of uploadedImages) {
+        const file = entry.file;
         if (cancelled) break;
         const baseName = file.name.replace(/\.[^/.]+$/, '').trim();
         const attendee = findAttendeeByImageName(baseName);
@@ -1403,13 +1516,56 @@ const App: React.FC = () => {
             </p>
 
             {uploadedImages.length > 0 && (
-              <div className="flex flex-wrap gap-2 text-[11px]">
-                {uploadedImages.map((file) => (
-                  <span key={file.name} className="inline-flex items-center px-2 py-1 rounded-full border border-slate-700 bg-slate-900 text-slate-300">
-                    {file.name}
-                  </span>
-                ))}
-              </div>
+              <>
+                <div className="space-y-2 mt-3">
+                  {uploadedImages.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="rounded-2xl border border-slate-700 bg-slate-900/60 p-3 flex flex-col gap-1"
+                    >
+                      <label className="flex items-center gap-2 text-[12px] text-slate-200">
+                        <input
+                          type="checkbox"
+                          checked={entry.removeBackground}
+                          onChange={() => toggleSupplementalBgSelection(entry.id)}
+                          className="h-4 w-4 accent-indigo-500"
+                        />
+                        <span className="font-semibold text-slate-100 truncate">{entry.file.name}</span>
+                      </label>
+                      <div className="flex flex-wrap gap-2 text-[11px] text-slate-400">
+                        {entry.isProcessing && <span className="text-amber-300">Removing background…</span>}
+                        {entry.processed && !entry.isProcessing && (
+                          <span className="text-emerald-300">Background removed</span>
+                        )}
+                        {entry.error && <span className="text-rose-400">{entry.error}</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <button
+                    onClick={processSelectedSupplementalRemovals}
+                    disabled={!hasSupplementalSelection || isSupplementalProcessing}
+                    className={`px-3 py-1 rounded-full border text-[11px] font-semibold transition-colors ${hasSupplementalSelection && !isSupplementalProcessing ? 'border-indigo-500 text-indigo-200 bg-indigo-500/10 hover:bg-indigo-500/20' : 'border-slate-700 text-slate-500 cursor-not-allowed'}`}
+                  >
+                    {isSupplementalProcessing ? 'Processing selected…' : 'Remove BG from selected'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSupplementalBgSelection(true)}
+                    className="px-3 py-1 rounded-full border border-emerald-500/40 text-emerald-200 text-[11px] font-semibold hover:border-emerald-400 hover:text-emerald-100"
+                  >
+                    Select all for removal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSupplementalBgSelection(false)}
+                    className="px-3 py-1 rounded-full border border-rose-500/30 text-rose-200 text-[11px] font-semibold hover:border-rose-400 hover:text-rose-100"
+                  >
+                    Clear selection
+                  </button>
+                </div>
+              </>
             )}
 
             {imageAssignmentStatus && (
@@ -1827,13 +1983,14 @@ const App: React.FC = () => {
                   <IDCard
                     data={attendee}
                     isSelected={selectedIds.has(attendee.id)}
-        onToggleSelect={() => toggleSelection(attendee.id)}
-        onEdit={() => handleEditClick(attendee)}
-        onFieldEdit={(fieldKey) => handleFieldEditClick(attendee, fieldKey)}
-        onImageUpload={(file) => handleImageUpload(attendee.id, file)}
-        onLogoUpload={handleLogoUpload}
-        onDelete={() => handleDeleteAttendee(attendee.id)}
-        downloadFormat={downloadFormat}
+                    onToggleSelect={() => toggleSelection(attendee.id)}
+                    onEdit={() => handleEditClick(attendee)}
+                    onFieldEdit={(fieldKey) => handleFieldEditClick(attendee, fieldKey)}
+                    onImageUpload={(file) => handleImageUpload(attendee.id, file)}
+                    onLogoUpload={handleLogoUpload}
+                    onRequestBackgroundRemoval={() => requestBackgroundRemoval(attendee.id)}
+                    onDelete={() => handleDeleteAttendee(attendee.id)}
+                    downloadFormat={downloadFormat}
                     filenameTemplate={filenameTemplate}
                     template={cardTemplate}
                     templateSettings={templateSettings}

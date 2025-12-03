@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Attendee, CardTemplate, TemplateSettings } from '../types';
-import { QrCode, Building2, Ticket, Star, X, Hash, ListChecks, Plus, Edit2, Check, Download, Trash2, Phone, MapPin, CalendarDays } from 'lucide-react';
+import { QrCode, Building2, Ticket, Star, X, Hash, ListChecks, Plus, Edit2, Check, Download, Trash2, Phone, MapPin, CalendarDays, Wand2 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { toJpeg, toPng } from 'html-to-image';
 import { buildCardFilename } from '../utils/filename';
@@ -22,6 +22,7 @@ interface IDCardProps {
   onLogoUpload?: (file: File) => void;
   onColorChange?: (color: string) => void;
   onPrincipalSignUpload?: (file: File) => void;
+  onRequestBackgroundRemoval?: () => void;
 }
 
 const getCategoryColor = (passType: string): string => {
@@ -93,7 +94,8 @@ export const IDCard: React.FC<IDCardProps> = ({
   filenameTemplate,
   template,
   templateSettings,
-  hiddenFields
+  hiddenFields,
+  onRequestBackgroundRemoval
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImageLoading, setIsImageLoading] = useState(false);
@@ -255,6 +257,19 @@ export const IDCard: React.FC<IDCardProps> = ({
         <div className="absolute inset-0 bg-white/70 flex items-center justify-center no-export">
           <div className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin"></div>
         </div>
+      )}
+      {data.image && onRequestBackgroundRemoval && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRequestBackgroundRemoval();
+          }}
+          disabled={data.isProcessingImage}
+          className="absolute bottom-2 right-2 rounded-full border border-white/30 bg-slate-900/80 px-2 py-1 text-[10px] font-semibold text-white hover:bg-slate-800 transition-colors disabled:cursor-wait disabled:opacity-70"
+        >
+          {data.isProcessingImage ? 'Processing…' : 'Remove BG'}
+        </button>
       )}
     </div>
   );
@@ -953,6 +968,16 @@ export const IDCard: React.FC<IDCardProps> = ({
           >
             <Download size={15} />
           </button>
+          {onRequestBackgroundRemoval && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRequestBackgroundRemoval(); }}
+              className="w-9 h-9 rounded-lg bg-white text-slate-700 border border-slate-200 hover:border-indigo-400 hover:text-indigo-600 transition-colors flex items-center justify-center disabled:cursor-wait disabled:opacity-70"
+              title="Remove background"
+              disabled={data.isProcessingImage}
+            >
+              <Wand2 size={15} />
+            </button>
+          )}
         </div>
 
         <input
