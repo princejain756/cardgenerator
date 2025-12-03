@@ -1,6 +1,6 @@
 // Use env key if present, otherwise fall back to the user-provided key.
-// Read OpenRouter API key only from env; do not hardcode fallbacks
-const OPENROUTER_API_KEY = (import.meta.env.VITE_OPENROUTER_API_KEY || '').trim();
+const FALLBACK_OR_KEY = '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';
+const OPENROUTER_API_KEY = (import.meta.env.VITE_OPENROUTER_API_KEY || FALLBACK_OR_KEY || '').trim();
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 interface ParsedAttendee {
@@ -110,7 +110,7 @@ Rules:
         'X-Title': 'Mani ID Pro'
       },
       body: JSON.stringify({
-        model: 'google/gemma-3-27b-it:free',
+        model: 'google/gemma-3-27b-it',
         messages: [
           {
             role: 'user',
@@ -338,7 +338,7 @@ Keep it brief and in plain text format.`;
         'X-Title': 'Mani ID Pro'
       },
       body: JSON.stringify({
-        model: 'google/gemma-3-27b-it:free',
+        model: 'google/gemma-3-27b-it',
         messages: [
           {
             role: 'user',
@@ -427,7 +427,7 @@ Use camelCase for field names exactly as they appear in the available fields lis
         'X-Title': 'Mani ID Pro'
       },
       body: JSON.stringify({
-        model: 'google/gemma-3-27b-it:free',
+        model: 'google/gemma-3-27b-it',
         messages: [
           {
             role: 'user',
