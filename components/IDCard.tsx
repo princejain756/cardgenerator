@@ -309,8 +309,8 @@ export const IDCard: React.FC<IDCardProps> = ({
           className="relative h-[180px] overflow-hidden"
           style={{ backgroundColor: primaryColor }}
         >
-          {/* Visible Color Picker Button */}
-          <div className="absolute top-2 right-2 z-30 no-export">
+	          {/* Visible Color Picker Button (editor-only, hidden on print/export) */}
+	          <div className="absolute top-2 right-2 z-30 no-print no-export">
             <label
               className="w-8 h-8 rounded-full border-2 border-white shadow-lg hover:scale-110 transition-transform flex items-center justify-center cursor-pointer bg-white/20 backdrop-blur-sm"
               title="Change card color"
@@ -957,11 +957,8 @@ export const IDCard: React.FC<IDCardProps> = ({
     return renderConferenceCard();
   };
 
-  // Keep a generous, uniform card footprint so no layout gets cropped and all cards align visually.
-  const sizeClass = (() => {
-    const base = 'w-[360px] min-h-[720px]';
-    return base;
-  })();
+  // Card width is fixed for consistency; height grows naturally with content so there is no extra empty space.
+  const sizeClass = 'w-[360px]';
 
   return (
     <>
