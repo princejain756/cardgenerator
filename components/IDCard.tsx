@@ -335,9 +335,16 @@ export const IDCard: React.FC<IDCardProps> = ({
             <div className="text-white flex-1 text-center pr-2">
               <h2 className="text-lg font-bold leading-tight mb-0.5 drop-shadow-md line-clamp-2">{templateSettings.brandName}</h2>
               <p className="text-[9px] font-medium opacity-90 mb-0.5">(Govt. Recognised)</p>
-              <p className="text-[9px] leading-tight opacity-90 max-w-[180px] mx-auto line-clamp-2">
-                {data.address ? data.address.split(',').slice(1).join(',') : 'Place your address, District State and Pin - 000000'}
-              </p>
+              {(() => {
+                const schoolAddress =
+                  templateSettings.address ||
+                  (data.address ? data.address.split(',').slice(1).join(',') : '');
+                return schoolAddress ? (
+                  <p className="text-[9px] leading-tight opacity-90 max-w-[180px] mx-auto line-clamp-2">
+                    {schoolAddress}
+                  </p>
+                ) : null;
+              })()}
               <div className="mt-0.5 bg-blue-800/50 inline-block px-2 py-0.5 rounded text-[10px] font-bold border border-blue-400/30">
                 Phone No.: {templateSettings.contactNumber}
               </div>
