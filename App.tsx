@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { Upload, Printer, Search, Users, Sparkles, Filter, X, CheckSquare, Square, Pencil, Trash2, DownloadCloud, LogOut, KeyRound, UserPlus, Palette, LayoutTemplate, Plus } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { Upload, Printer, Search, Users, Sparkles, Filter, X, CheckSquare, Square, Pencil, Trash2, DownloadCloud, LogOut, KeyRound, UserPlus, Palette, LayoutTemplate, Plus, ImagePlus, HelpCircle } from 'lucide-react';
 import { IDCard } from './components/IDCard';
 import { EditModal } from './components/EditModal';
 import { parseTSVData } from './utils/parser';
@@ -206,6 +206,11 @@ const App: React.FC = () => {
   const [filenameTemplate, setFilenameTemplate] = useState('{name}_IDCARD');
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('authToken'));
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [uploadedImages, setUploadedImages] = useState<File[]>([]);
+  const [showImageHelp, setShowImageHelp] = useState(false);
+  const [imageAssignmentStatus, setImageAssignmentStatus] = useState<string | null>(null);
+  const [imageAssignmentBatch, setImageAssignmentBatch] = useState(0);
+  const processedImageBatchesRef = useRef<Set<number>>(new Set());
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [loginForm, setLoginForm] = useState({ username: 'admin', password: '' });
@@ -536,6 +541,21 @@ const App: React.FC = () => {
     }
   };
 
+  const handleBatchImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) {
+      setUploadedImages([]);
+      return;
+    }
+    const sortedFiles = Array.from(files).sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+    );
+    setUploadedImages(sortedFiles);
+    setImageAssignmentStatus(null);
+    setImageAssignmentBatch((prev) => prev + 1);
+    event.target.value = '';
+  };
+
   const handleAiAnalysis = async () => {
     setIsAiLoading(true);
     const companies = attendees.map(a => a.company).filter(c => c && c !== 'Self');
@@ -572,6 +592,14 @@ const App: React.FC = () => {
     const types = new Set(attendees.map(a => a.passType));
     return ['All', ...Array.from(types)];
   }, [attendees]);
+
+  const imageAssignmentStatusColor = imageAssignmentStatus
+    ? imageAssignmentStatus.toLowerCase().includes('assigned automatically')
+      ? 'text-emerald-300'
+      : imageAssignmentStatus.toLowerCase().includes('log in')
+        ? 'text-amber-300'
+        : 'text-amber-200'
+    : '';
 
   // --- Selection Logic ---
   const toggleSelection = (id: string) => {
@@ -739,55 +767,197 @@ const App: React.FC = () => {
     if (!token) return;
 
     try {
-      // Show loading state - update attendee with loading indicator
       setAttendees(prev => prev.map(a =>
-        a.id === attendeeId
-          ? { ...a, isProcessingImage: true }
-          : a
+        a.id === attendeeId ? { ...a, isProcessingImage: true } : a
       ));
-
-      // Remove background from image
       const blob = await removeBackground(file);
-
-      // Convert blob to base64
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve) => {
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(blob);
-      });
-      const imageUrl = await base64Promise;
-
-      // Update attendee with processed image
-      const updated = attendees.find(a => a.id === attendeeId);
-      if (!updated) return;
-
-      const payload = { ...updated, image: imageUrl, isProcessingImage: false };
-      await apiUpdateAttendee(token, attendeeId, payload);
-
-      setAttendees(prev => prev.map(a =>
-        a.id === attendeeId ? payload : a
-      ));
+      const imageUrl = await readBlobAsDataUrl(blob);
+      await submitImageUpdate(attendeeId, imageUrl);
     } catch (error) {
       console.error('Failed to process image:', error);
       alert('Failed to process image. Using original image instead.');
-
-      // Fallback: use original image without background removal
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const imageUrl = reader.result as string;
-        const updated = attendees.find(a => a.id === attendeeId);
-        if (!updated) return;
-
-        const payload = { ...updated, image: imageUrl, isProcessingImage: false };
-        await apiUpdateAttendee(token, attendeeId, payload);
-
-        setAttendees(prev => prev.map(a =>
-          a.id === attendeeId ? payload : a
-        ));
-      };
-      reader.readAsDataURL(file);
+      try {
+        const imageUrl = await readBlobAsDataUrl(file);
+        await submitImageUpdate(attendeeId, imageUrl);
+      } catch (fallbackError) {
+        console.error('Fallback image assignment failed:', fallbackError);
+      }
     }
   };
+
+  const readBlobAsDataUrl = (blob: Blob) => {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error('Failed to read image'));
+      reader.readAsDataURL(blob);
+    });
+  };
+
+  const submitImageUpdate = async (attendeeId: string, imageData: string) => {
+    if (!token) throw new Error('Authentication required to update image');
+    const updated = attendees.find(a => a.id === attendeeId);
+    if (!updated) throw new Error('Attendee not found');
+    const payload = { ...updated, image: imageData, isProcessingImage: false };
+    await apiUpdateAttendee(token, attendeeId, payload);
+    setAttendees(prev => prev.map(a => a.id === attendeeId ? payload : a));
+  };
+
+  const assignImageWithoutProcessing = async (attendeeId: string, file: File) => {
+    const imageUrl = await readBlobAsDataUrl(file);
+    await submitImageUpdate(attendeeId, imageUrl);
+  };
+
+  const parseIndexFromFilename = (name: string) => {
+    const match = name.match(/^(\d+)/);
+    if (!match) return null;
+    const numeric = Number(match[1]);
+    return Number.isNaN(numeric) ? null : numeric;
+  };
+
+  const assignImagesSequentially = async (files: File[], assignedIds: Set<string>, orderedList: Attendee[]) => {
+    if (!files.length) return [];
+    const stillUnmatched: File[] = [];
+    const remainingAttendees = orderedList.filter((attendee) => !assignedIds.has(attendee.id));
+
+    const pickAttendeeByIndex = (index: number | null) => {
+      if (index === null) return null;
+      const normalized = Math.max(0, index);
+      if (normalized >= orderedList.length) return null;
+      const candidate = orderedList[normalized];
+      return assignedIds.has(candidate.id) ? null : candidate;
+    };
+
+    let pointer = 0;
+    for (const file of files) {
+      const baseName = file.name.replace(/\.[^/.]+$/, '').trim();
+      const parsedIndex = parseIndexFromFilename(baseName);
+      const targeted = pickAttendeeByIndex(parsedIndex);
+      if (targeted) {
+        try {
+          await assignImageWithoutProcessing(targeted.id, file);
+          assignedIds.add(targeted.id);
+          continue;
+        } catch (err) {
+          console.error('Sequential image assignment failed at targeted attendee:', err);
+        }
+      }
+
+      // fall back to next available attendee from remaining queue
+      while (pointer < remainingAttendees.length && assignedIds.has(remainingAttendees[pointer].id)) {
+        pointer++;
+      }
+      if (pointer >= remainingAttendees.length) {
+        stillUnmatched.push(file);
+        continue;
+      }
+      const fallbackAttendee = remainingAttendees[pointer++];
+      try {
+        await assignImageWithoutProcessing(fallbackAttendee.id, file);
+        assignedIds.add(fallbackAttendee.id);
+      } catch (err) {
+        console.error('Sequential image assignment failed at fallback attendee:', err);
+        stillUnmatched.push(file);
+      }
+    }
+    return stillUnmatched;
+  };
+
+  const normalizeValue = (value: unknown) => {
+    if (value === undefined || value === null) return '';
+    return String(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+  };
+
+  const getAttendeeMatchValues = (attendee: Attendee) => {
+    const values = new Set<string>();
+    [attendee.registrationId, attendee.schoolId, attendee.id].forEach((val) => {
+      if (val) values.add(normalizeValue(val));
+    });
+    if (attendee.extraFields) {
+      Object.values(attendee.extraFields).forEach((val) => {
+        if (val) values.add(normalizeValue(val));
+      });
+      Object.keys(attendee.extraFields).forEach((key) => {
+        if (key) values.add(normalizeValue(key));
+      });
+    }
+    return values;
+  };
+
+  const findAttendeeByImageName = (fileBaseName: string) => {
+    const numericMatch = fileBaseName.match(/^(\d+)/);
+    const normalizedBase = normalizeValue(fileBaseName);
+    const normalizedNumber = numericMatch ? normalizeValue(numericMatch[1]) : '';
+    const candidates = new Set<string>();
+    if (normalizedBase) candidates.add(normalizedBase);
+    if (normalizedNumber) candidates.add(normalizedNumber);
+
+    for (const candidate of candidates) {
+      for (const attendee of attendees) {
+        const matchValues = getAttendeeMatchValues(attendee);
+        if (matchValues.has(candidate)) return attendee;
+      }
+    }
+
+    if (numericMatch) {
+      const numericValue = Number(numericMatch[1]);
+      const indexCandidates: number[] = [];
+      if (!Number.isNaN(numericValue)) {
+        indexCandidates.push(numericValue);
+        if (numericValue > 0) indexCandidates.push(numericValue - 1);
+      }
+      for (const idx of indexCandidates) {
+        if (idx >= 0 && idx < attendees.length) return attendees[idx];
+      }
+    }
+
+    return null;
+  };
+
+  useEffect(() => {
+    if (!imageAssignmentBatch || !uploadedImages.length) return;
+    if (!token) {
+      setImageAssignmentStatus('Log in to apply uploaded images.');
+      return;
+    }
+    if (processedImageBatchesRef.current.has(imageAssignmentBatch)) return;
+    processedImageBatchesRef.current.add(imageAssignmentBatch);
+
+    const orderedAttendees = attendees;
+    let cancelled = false;
+    (async () => {
+      setImageAssignmentStatus('Assigning images to cards...');
+      const assignedAttendeeIds = new Set<string>();
+      const unmatchedFiles: File[] = [];
+      for (const file of uploadedImages) {
+        if (cancelled) break;
+        const baseName = file.name.replace(/\.[^/.]+$/, '').trim();
+        const attendee = findAttendeeByImageName(baseName);
+        if (!attendee) {
+          unmatchedFiles.push(file);
+          continue;
+        }
+        try {
+          await assignImageWithoutProcessing(attendee.id, file);
+          assignedAttendeeIds.add(attendee.id);
+        } catch (err) {
+          console.error('Auto-assign image failed:', err);
+          unmatchedFiles.push(file);
+        }
+      }
+      if (cancelled) return;
+      const finalUnmatched = await assignImagesSequentially(unmatchedFiles, assignedAttendeeIds, orderedAttendees);
+      if (finalUnmatched.length === 0) {
+        setImageAssignmentStatus('All images were assigned automatically.');
+      } else {
+        setImageAssignmentStatus(`Images assigned except: ${finalUnmatched.map((f) => f.name).join(', ')}`);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [imageAssignmentBatch, uploadedImages, token, attendees]);
 
 
   const handleLogoUpload = (file: File) => {
@@ -1192,6 +1362,68 @@ const App: React.FC = () => {
                 )}
               </div>
             </div>
+          </div>
+
+          <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700 shadow-xl space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <ImagePlus className="text-indigo-400" size={20} />
+                <div>
+                  <p className="text-sm text-slate-400">Ordered Imagery</p>
+                  <h3 className="text-white font-semibold">Add supplemental images</h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowImageHelp((prev) => !prev)}
+                className="flex items-center gap-2 text-xs uppercase tracking-wide px-3 py-1.5 rounded-full border border-slate-700 text-slate-300 hover:border-indigo-500 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+              >
+                <HelpCircle size={14} />
+                <span>{showImageHelp ? 'Hide help' : 'Help'}</span>
+              </button>
+            </div>
+            <p className="text-xs text-slate-400">
+              Upload visuals to accompany the badge workflow. Naming them sequentially keeps the layout algorithm aligned.
+            </p>
+            <label className="relative flex items-center gap-2 cursor-pointer bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-slate-300 hover:border-indigo-500 transition-colors">
+              <ImagePlus className="text-indigo-400" size={16} />
+              <span className="text-sm font-medium">Select images</span>
+              <input
+                type="file"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                multiple
+                accept="image/png,image/jpeg,image/webp"
+                onChange={handleBatchImageUpload}
+              />
+            </label>
+            <p className="text-xs text-slate-400">
+              {uploadedImages.length
+                ? `${uploadedImages.length} image${uploadedImages.length > 1 ? 's' : ''} ready`
+                : 'No images selected yet.'}
+            </p>
+
+            {uploadedImages.length > 0 && (
+              <div className="flex flex-wrap gap-2 text-[11px]">
+                {uploadedImages.map((file) => (
+                  <span key={file.name} className="inline-flex items-center px-2 py-1 rounded-full border border-slate-700 bg-slate-900 text-slate-300">
+                    {file.name}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {imageAssignmentStatus && (
+              <p className={`text-[11px] mt-2 ${imageAssignmentStatusColor}`}>
+                {imageAssignmentStatus}
+              </p>
+            )}
+
+            {showImageHelp && (
+              <div className="text-xs text-slate-300 bg-slate-900/60 border border-slate-700 rounded-xl p-3 space-y-2">
+                <p>Ur images should be in order of 1 2 3 4 5 6, like <code className="text-emerald-300">1.png</code>, <code className="text-emerald-300">2.jpg</code>, or <code className="text-emerald-300">3.webp</code>.</p>
+                <p>The numbering lets the algorithm recognize and place them in the correct slot on each card.</p>
+              </div>
+            )}
           </div>
 
           {/* Template Studio */}

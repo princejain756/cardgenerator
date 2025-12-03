@@ -433,7 +433,7 @@ export const IDCard: React.FC<IDCardProps> = ({
             'address'
           ]).length > 0 && (
             <div className="mt-4 pt-3 border-t border-slate-200">
-              <p className="text-[11px] uppercase text-slate-400 font-bold mb-2">Custom</p>
+              <div className="sr-only">Additional fields</div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {getCustomFields(data.extraFields, [
                   ...(templateSettings.layout?.table || []),
@@ -912,7 +912,7 @@ export const IDCard: React.FC<IDCardProps> = ({
 
   // Keep a generous, uniform card footprint so no layout gets cropped and all cards align visually.
   const sizeClass = (() => {
-    const base = 'w-[360px] h-[720px]';
+    const base = 'w-[360px] min-h-[720px]';
     return base;
   })();
 
