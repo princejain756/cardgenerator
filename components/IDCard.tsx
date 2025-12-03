@@ -266,7 +266,7 @@ export const IDCard: React.FC<IDCardProps> = ({
             onRequestBackgroundRemoval();
           }}
           disabled={data.isProcessingImage}
-          className="absolute bottom-2 right-2 rounded-full border border-white/30 bg-slate-900/80 px-2 py-1 text-[10px] font-semibold text-white hover:bg-slate-800 transition-colors disabled:cursor-wait disabled:opacity-70"
+          className="absolute bottom-2 right-2 rounded-full border border-white/30 bg-slate-900/80 px-2 py-1 text-[10px] font-semibold text-white hover:bg-slate-800 transition-colors disabled:cursor-wait disabled:opacity-70 no-print no-export"
         >
           {data.isProcessingImage ? 'Processing…' : 'Remove BG'}
         </button>

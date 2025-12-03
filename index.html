@@ -11,6 +11,7 @@
         font-family: 'Inter', sans-serif;
       }
       @media print {
+        /* Hide all interactive-only UI on paper */
         .no-print {
           display: none !important;
         }
@@ -19,6 +20,7 @@
         }
         body {
           background: white;
+          margin: 0;
         }
       }
     </style>
