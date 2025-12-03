@@ -71,11 +71,28 @@ const formatClass = (className?: string, section?: string) => {
   return className || section || '';
 };
 
-const getCustomFields = (extras?: Record<string, string>, exclude: string[] = []) => {
+const getCustomFields = (extras?: Record<string, string>, exclude: string[] = [], hiddenFields?: Set<string>) => {
   if (!extras) return [];
   const skip = new Set(exclude.map((e) => e.toLowerCase()));
+
+   const isExtraHidden = (label: string) => {
+    if (!hiddenFields || hiddenFields.size === 0) return false;
+    const normalize = (value: string) => value.replace(/[^a-z0-9]/gi, '').toLowerCase();
+    const labelNorm = normalize(label);
+    if (!labelNorm) return false;
+
+    for (const field of hiddenFields) {
+      const base = normalize(field);
+      if (!base) continue;
+      if (base === labelNorm || base.includes(labelNorm) || labelNorm.includes(base)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   return Object.entries(extras)
-    .filter(([key, value]) => value && !skip.has(key.toLowerCase()))
+    .filter(([key, value]) => value && !skip.has(key.toLowerCase()) && !isExtraHidden(key))
     .map(([key, value]) => ({ key, value }));
 };
 
@@ -449,27 +466,31 @@ export const IDCard: React.FC<IDCardProps> = ({
             )}
 
           {/* Custom extra fields */}
-          {getCustomFields(data.extraFields, [
-            ...(templateSettings.layout?.table || []),
-            ...(templateSettings.layout?.footer || []),
-            'address'
-          ]).length > 0 && (
-            <div className="mt-4 pt-3 border-t border-slate-200">
-              <div className="sr-only">Additional fields</div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {getCustomFields(data.extraFields, [
-                  ...(templateSettings.layout?.table || []),
-                  ...(templateSettings.layout?.footer || []),
-                  'address'
-                ]).map(({ key, value }) => (
-                  <div key={key} className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                    <p className="text-[10px] uppercase text-slate-400 font-bold tracking-[0.12em] truncate">{key}</p>
-                    <p className="text-[12px] font-semibold text-slate-800 break-words leading-snug">{value}</p>
-                  </div>
-                ))}
+          {(() => {
+            const customExtras = getCustomFields(
+              data.extraFields,
+              [
+                ...(templateSettings.layout?.table || []),
+                ...(templateSettings.layout?.footer || []),
+                'address'
+              ],
+              hiddenFields
+            );
+            if (customExtras.length === 0) return null;
+            return (
+              <div className="mt-4 pt-3 border-t border-slate-200">
+                <div className="sr-only">Additional fields</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {customExtras.map(({ key, value }) => (
+                    <div key={key} className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                      <p className="text-[10px] uppercase text-slate-400 font-bold tracking-[0.12em] truncate">{key}</p>
+                      <p className="text-[12px] font-semibold text-slate-800 break-words leading-snug">{value}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {Array.isArray(data.tracks) && data.tracks.length > 0 && (
             <div className="mt-4">
@@ -533,7 +554,7 @@ export const IDCard: React.FC<IDCardProps> = ({
     const roleLine = data.jobTitle || data.role || data.company;
     const location = data.address || templateSettings.address;
     const passLabel = data.passType || 'General Entry';
-    const customFields = getCustomFields(data.extraFields, ['address']);
+    const customFields = getCustomFields(data.extraFields, ['address'], hiddenFields);
 
     return (
       <div className={`flex flex-col h-full bg-white rounded-[28px] overflow-hidden border ${borderColor} shadow-2xl relative`}>
@@ -892,20 +913,24 @@ export const IDCard: React.FC<IDCardProps> = ({
             {data.address || templateSettings.address}
           </p>
         </div>
-        {getCustomFields(data.extraFields).length > 0 && (
-          <div className="mt-3 bg-white rounded-lg border border-slate-100 p-3 shadow-sm space-y-2 max-h-32 overflow-y-auto custom-scrollbar">
-            {getCustomFields(data.extraFields).map(({ key, value }) => (
-              <div
-                key={key}
-                className="text-[11px] text-slate-600 flex justify-between gap-2 cursor-pointer"
-                onClick={(e) => { e.stopPropagation(); triggerFieldEdit(`custom:${key}`); }}
-              >
-                <span className="uppercase tracking-[0.14em] font-bold text-slate-400 truncate">{key}</span>
-                <span className="text-[12px] font-semibold text-slate-800 text-right leading-snug break-words">{value}</span>
-              </div>
-            ))}
-          </div>
-        )}
+        {(() => {
+          const footerCustomFields = getCustomFields(data.extraFields, [], hiddenFields);
+          if (footerCustomFields.length === 0) return null;
+          return (
+            <div className="mt-3 bg-white rounded-lg border border-slate-100 p-3 shadow-sm space-y-2 max-h-32 overflow-y-auto custom-scrollbar">
+              {footerCustomFields.map(({ key, value }) => (
+                <div
+                  key={key}
+                  className="text-[11px] text-slate-600 flex justify-between gap-2 cursor-pointer"
+                  onClick={(e) => { e.stopPropagation(); triggerFieldEdit(`custom:${key}`); }}
+                >
+                  <span className="uppercase tracking-[0.14em] font-bold text-slate-400 truncate">{key}</span>
+                  <span className="text-[12px] font-semibold text-slate-800 text-right leading-snug break-words">{value}</span>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
         {qrValue && (
           <div className="mt-3 bg-white rounded-lg border border-slate-100 p-3 shadow-sm flex items-center justify-between">
             <div>
