@@ -1,0 +1,358 @@
+/* Custom styles for the card generator */
+
+/* ============ CSS Variables ============ */
+:root {
+  --sidebar-width: 280px;
+  --sidebar-collapsed-width: 60px;
+  --header-height: 64px;
+  --transition-speed: 200ms;
+}
+
+/* ============ Layout ============ */
+.app-layout {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 1fr;
+  grid-template-rows: var(--header-height) 1fr;
+  min-height: 100vh;
+  transition: grid-template-columns var(--transition-speed) ease;
+}
+
+.app-layout.sidebar-collapsed {
+  grid-template-columns: var(--sidebar-collapsed-width) 1fr;
+}
+
+/* ============ Sidebar ============ */
+.sidebar {
+  grid-row: 1 / -1;
+  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.sidebar-section {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.sidebar-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.6);
+  padding: 16px 16px 8px;
+}
+
+/* ============ Drag and Drop ============ */
+.draggable-element {
+  cursor: grab;
+  user-select: none;
+  transition: all 150ms ease;
+}
+
+.draggable-element:active {
+  cursor: grabbing;
+}
+
+.draggable-element.dragging {
+  opacity: 0.5;
+  transform: scale(1.02);
+}
+
+.drop-zone {
+  border: 2px dashed transparent;
+  transition: all 150ms ease;
+}
+
+.drop-zone.drag-over {
+  border-color: rgba(99, 102, 241, 0.5);
+  background: rgba(99, 102, 241, 0.05);
+}
+
+/* ============ Template Editor Canvas ============ */
+.template-canvas {
+  position: relative;
+  width: 280px;
+  height: 440px;
+  background: white;
+  border-radius: 24px;
+  overflow: hidden;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  flex-shrink: 0;
+}
+
+@media (min-width: 768px) {
+  .template-canvas {
+    width: 320px;
+    height: 500px;
+  }
+}
+
+.template-canvas-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(99, 102, 241, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99, 102, 241, 0.1) 1px, transparent 1px);
+  background-size: 20px 20px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.template-canvas.editing .template-canvas-grid {
+  opacity: 1;
+}
+
+/* Draggable element in editor */
+.template-element {
+  position: absolute;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: box-shadow 150ms ease;
+}
+
+.template-element:hover,
+.template-element.selected {
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.6);
+}
+
+.template-element .drag-handle {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 24px;
+  height: 8px;
+  background: #4f46e5;
+  border-radius: 4px;
+  opacity: 0;
+  cursor: grab;
+  transition: opacity 150ms ease;
+}
+
+.template-element:hover .drag-handle,
+.template-element.selected .drag-handle {
+  opacity: 1;
+}
+
+/* Resize handles */
+.resize-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #4f46e5;
+  border: 2px solid white;
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.template-element:hover .resize-handle,
+.template-element.selected .resize-handle {
+  opacity: 1;
+}
+
+.resize-handle.nw {
+  top: -5px;
+  left: -5px;
+  cursor: nw-resize;
+}
+
+.resize-handle.ne {
+  top: -5px;
+  right: -5px;
+  cursor: ne-resize;
+}
+
+.resize-handle.sw {
+  bottom: -5px;
+  left: -5px;
+  cursor: sw-resize;
+}
+
+.resize-handle.se {
+  bottom: -5px;
+  right: -5px;
+  cursor: se-resize;
+}
+
+/* ============ Color Picker ============ */
+.color-swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease;
+  border: 2px solid transparent;
+}
+
+.color-swatch:hover {
+  transform: scale(1.1);
+}
+
+.color-swatch.active {
+  border-color: white;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.8);
+}
+
+.gradient-preview {
+  height: 40px;
+  border-radius: 8px;
+  background-size: cover;
+}
+
+/* ============ Card Grid ============ */
+.card-grid {
+  display: grid;
+  gap: 24px;
+  padding: 24px;
+}
+
+@media (min-width: 640px) {
+  .card-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .card-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (min-width: 1280px) {
+  .card-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* ============ Minimal View Table ============ */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table th,
+.data-table td {
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.data-table th {
+  background: rgba(15, 23, 42, 0.5);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(148, 163, 184, 0.8);
+}
+
+.data-table tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* ============ Scrollbar ============ */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
+}
+
+/* ============ Animations ============ */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-20px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideInUp {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 200ms ease-out;
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft 200ms ease-out;
+}
+
+.animate-slide-in-up {
+  animation: slideInUp 200ms ease-out;
+}
+
+/* ============ Print Styles ============ */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  .sidebar {
+    display: none !important;
+  }
+
+  .app-layout {
+    display: block;
+  }
+
+  .card-grid {
+    display: block;
+    padding: 0;
+  }
+
+  .card-grid>* {
+    display: inline-block;
+    margin: 16px;
+    page-break-inside: avoid;
+  }
+}

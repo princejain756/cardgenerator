@@ -1,8 +1,8 @@
-import React, { useState, useRef, useEffect, CSSProperties } from 'react';
+import React, { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Attendee, CardTemplate, TemplateSettings } from '../types';
-import { QrCode, Building2, Ticket, Star, X, Hash, ListChecks, Plus, Edit2, Check, Download, Trash2, Phone, MapPin, CalendarDays, Wand2 } from 'lucide-react';
-import QRCode from 'qrcode';
+import { Attendee, BadgeTemplate, TemplateLayout } from '../types';
+import { Building2, Ticket, Star, X, Hash, ListChecks, Plus, Edit2, Check, Download, Trash2, Phone, MapPin, CalendarClock, BadgeCheck, UserRound, Briefcase } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { toJpeg, toPng } from 'html-to-image';
 import { buildCardFilename } from '../utils/filename';
 
@@ -11,18 +11,23 @@ interface IDCardProps {
   isSelected: boolean;
   onToggleSelect: () => void;
   onEdit: () => void;
-  onFieldEdit?: (fieldKey: string) => void;
+  onOpenTemplateEditor?: () => void;
   onImageUpload: (file: File) => void;
   onDelete: () => void;
   downloadFormat: 'png' | 'jpg';
   filenameTemplate: string;
-  template: CardTemplate;
-  templateSettings: TemplateSettings;
-  hiddenFields?: Set<string>;
-  onLogoUpload?: (file: File) => void;
-  onColorChange?: (color: string) => void;
-  onPrincipalSignUpload?: (file: File) => void;
-  onRequestBackgroundRemoval?: () => void;
+  activeTemplate: BadgeTemplate;
+  accentGradient: string;
+  schoolBranding: {
+    name: string;
+    address: string;
+    phone: string;
+    tagline: string;
+  };
+  username?: string;
+  baseUrl?: string;
+  layout?: TemplateLayout;
+  customLabels?: Record<string, string>;
 }
 
 const getCategoryColor = (passType: string): string => {
@@ -44,56 +49,7 @@ const getBorderColor = (passType: string): string => {
 const getRoleBadgeClasses = (role?: string) => {
   if (role === 'Speaker') return 'bg-amber-100 text-amber-700 border border-amber-200';
   if (role === 'Organizer') return 'bg-teal-100 text-teal-700 border border-teal-200';
-  return 'bg-slate-100 text-slate-700 border border-slate-200';
-};
-
-const formatDateShort = (value?: string) => {
-  if (!value) return '';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  // Format as DD-MM-YYYY
-  const day = String(parsed.getDate()).padStart(2, '0');
-  const month = String(parsed.getMonth() + 1).padStart(2, '0');
-  const year = parsed.getFullYear();
-  return `${day}-${month}-${year}`;
-};
-
-const formatDateRange = (start?: string, end?: string) => {
-  const startText = formatDateShort(start) || start;
-  const endText = formatDateShort(end) || end;
-  if (startText && endText) return `${startText} - ${endText}`;
-  return startText || endText || '';
-};
-
-const formatClass = (className?: string, section?: string) => {
-  if (!className && !section) return '';
-  if (className && section) return `${className} - ${section}`;
-  return className || section || '';
-};
-
-const getCustomFields = (extras?: Record<string, string>, exclude: string[] = [], hiddenFields?: Set<string>) => {
-  if (!extras) return [];
-  const skip = new Set(exclude.map((e) => e.toLowerCase()));
-
-   const isExtraHidden = (label: string) => {
-    if (!hiddenFields || hiddenFields.size === 0) return false;
-    const normalize = (value: string) => value.replace(/[^a-z0-9]/gi, '').toLowerCase();
-    const labelNorm = normalize(label);
-    if (!labelNorm) return false;
-
-    for (const field of hiddenFields) {
-      const base = normalize(field);
-      if (!base) continue;
-      if (base === labelNorm || base.includes(labelNorm) || labelNorm.includes(base)) {
-        return true;
-      }
-    }
-    return false;
-  };
-
-  return Object.entries(extras)
-    .filter(([key, value]) => value && !skip.has(key.toLowerCase()) && !isExtraHidden(key))
-    .map(([key, value]) => ({ key, value }));
+  return '';
 };
 
 export const IDCard: React.FC<IDCardProps> = ({
@@ -101,76 +57,39 @@ export const IDCard: React.FC<IDCardProps> = ({
   isSelected,
   onToggleSelect,
   onEdit,
-  onFieldEdit,
+  onOpenTemplateEditor,
   onImageUpload,
-  onLogoUpload,
-  onColorChange,
-  onPrincipalSignUpload,
   onDelete,
   downloadFormat,
   filenameTemplate,
-  template,
-  templateSettings,
-  hiddenFields,
-  onRequestBackgroundRemoval
+  activeTemplate,
+  accentGradient,
+  schoolBranding,
+  username = 'user',
+  baseUrl = 'https://id.maninfini.com',
+  layout,
+  customLabels = {}
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImageLoading, setIsImageLoading] = useState(false);
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const logoInputRef = useRef<HTMLInputElement>(null);
-  const signInputRef = useRef<HTMLInputElement>(null);
-  const headerBg = getCategoryColor(data.passType);
-  const borderColor = getBorderColor(data.passType);
+  const template: BadgeTemplate = activeTemplate || data.template || 'conference';
+  const headerBg = template === 'school-classic' || template === 'company-id' ? `bg-gradient-to-br ${accentGradient}` : getCategoryColor(data.passType);
+  const borderColor = template === 'school-classic' || template === 'company-id' ? 'border-slate-200' : getBorderColor(data.passType);
 
-  const isHidden = (label?: string) => {
-    if (!hiddenFields || !label) return false;
-    const normalize = (value: string) => value.replace(/[^a-z0-9]/gi, '').toLowerCase();
-    const labelNorm = normalize(label);
-
-    for (const field of hiddenFields) {
-      const base = normalize(field);
-      const variants = new Set<string>([base]);
-      if (base.includes('dateofbirth')) {
-        variants.add('dob');
-        variants.add('birthdate');
-      }
-      if (base === 'dob') {
-        variants.add('dateofbirth');
-        variants.add('birthdate');
-      }
-
-      for (const variant of variants) {
-        if (
-          variant === labelNorm ||
-          variant.includes(labelNorm) ||
-          labelNorm.includes(variant)
-        ) {
-          return true;
-        }
-      }
-    }
-    return false;
+  // Helper to check if an element is visible in the layout
+  const isElementVisible = (key: string): boolean => {
+    if (!layout) return true; // If no layout provided, show all elements (fallback)
+    const element = layout[key as keyof typeof layout];
+    // Element must EXIST in the layout AND be visible (not just not-false)
+    // If element doesn't exist in layout, it means user deleted it - don't show
+    if (!element) return false;
+    return element.visible === true;
   };
 
-  const palette = {
-    primary: templateSettings.primaryColor || '#1d4ed8',
-    accent: templateSettings.accentColor || '#38bdf8'
-  };
-  const schoolGradient = `linear-gradient(135deg, ${palette.primary}, ${palette.accent})`;
-  const qrValue = data.barcodeValue || data.registrationId || data.id;
-  useEffect(() => {
-    if (!qrValue) {
-      setQrDataUrl(null);
-      return;
-    }
-    QRCode.toDataURL(qrValue, { margin: 0, width: 256 })
-      .then(setQrDataUrl)
-      .catch(() => setQrDataUrl(null));
-  }, [qrValue]);
-  const triggerFieldEdit = (fieldKey: string) => {
-    if (onFieldEdit) return onFieldEdit(fieldKey);
-    return onEdit();
+  // Get element label (custom or default)
+  const getElementLabel = (key: string, defaultLabel: string): string => {
+    return customLabels[key] || defaultLabel;
   };
 
   const handleImageClick = (e: React.MouseEvent) => {
@@ -185,37 +104,6 @@ export const IDCard: React.FC<IDCardProps> = ({
       onImageUpload(file);
     } else {
       setIsImageLoading(false);
-    }
-  };
-
-  const handleLogoClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    logoInputRef.current?.click();
-  };
-
-  const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && onLogoUpload) {
-      onLogoUpload(file);
-    }
-  };
-
-  const handleColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newColor = e.target.value;
-    if (onColorChange) {
-      onColorChange(newColor);
-    }
-  };
-
-  const handleSignClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    signInputRef.current?.click();
-  };
-
-  const handleSignFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && onPrincipalSignUpload) {
-      onPrincipalSignUpload(file);
     }
   };
 
@@ -247,778 +135,624 @@ export const IDCard: React.FC<IDCardProps> = ({
     }
   };
 
-  const renderAvatar = (size = 'w-24 h-24', bordered = true) => (
-    <div className={`relative ${size} rounded-full bg-white ${bordered ? 'border-4 border-white shadow-lg' : ''} flex items-center justify-center overflow-hidden`}>
-      {data.image ? (
-        <img
-          src={data.image}
-          alt={data.name}
-          className="w-full h-full object-cover object-center"
-          onLoad={handleImageLoad}
-          onError={handleImageError}
-        />
-      ) : (
-        <div className={`w-full h-full flex items-center justify-center text-3xl font-bold text-slate-700 relative`}>
-          <div className={`absolute inset-0 opacity-10 ${headerBg}`}></div>
-          {data.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-        </div>
-      )}
-      {/* Background Removal Processing Indicator */}
-      {data.isProcessingImage && (
-        <div className="absolute inset-0 bg-white/80 flex flex-col items-center justify-center">
-          <div className="w-8 h-8 border-3 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-          <p className="text-[10px] text-blue-600 mt-2 font-semibold">Removing background...</p>
-        </div>
-      )}
-      {isImageLoading && (
-        <div className="absolute inset-0 bg-white/70 flex items-center justify-center no-export">
-          <div className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin"></div>
-        </div>
-      )}
-      {data.image && onRequestBackgroundRemoval && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onRequestBackgroundRemoval();
-          }}
-          disabled={data.isProcessingImage}
-          className="absolute bottom-2 right-2 rounded-full border border-white/30 bg-slate-900/80 px-2 py-1 text-[10px] font-semibold text-white hover:bg-slate-800 transition-colors disabled:cursor-wait disabled:opacity-70 no-print no-export"
-        >
-          {data.isProcessingImage ? 'Processing…' : 'Remove BG'}
-        </button>
-      )}
+  const renderSchoolRow = (label: string, value?: string, icon?: React.ReactNode) => (
+    <div className="flex items-start justify-between bg-slate-50 px-3 py-2.5 rounded-lg border border-slate-100">
+      <div className="flex items-center gap-2 text-[11px] uppercase text-slate-500 font-semibold tracking-wide">
+        {icon}
+        <span>{label}</span>
+      </div>
+      <span className="text-sm font-semibold text-slate-700 text-right max-w-[160px] leading-tight">
+        {value || '—'}
+      </span>
     </div>
   );
 
   const renderSchoolCard = () => {
-    // Reference design implementation
-    const primaryColor = templateSettings.primaryColor || '#1d4ed8'; // Use template color
+    const brandName = schoolBranding.name || data.schoolName || data.company || 'School Name';
+    const brandAddress = schoolBranding.address || data.address || '';
+    const brandPhone = schoolBranding.phone || data.contactNumber || '';
+    const brandTagline = schoolBranding.tagline || '';
+    const studentId = data.schoolId || data.registrationId || 'ID Pending';
+    const studentClass = data.className
+      ? `Class ${data.className}${data.section ? ` • Section ${data.section}` : ''}`
+      : data.section
+        ? `Section ${data.section}`
+        : '';
+    const extras = Object.entries(data.extras || {}).filter(([, v]) => v);
+    const schoolFields = [
+      { label: "Father's Name", value: data.fatherName, icon: <UserRound size={14} className="text-sky-500" /> },
+      { label: "Mother's Name", value: data.motherName, icon: <UserRound size={14} className="text-sky-500" /> },
+      { label: 'D.O.B', value: data.dateOfBirth, icon: <CalendarClock size={14} className="text-sky-500" /> },
+      { label: 'Contact No.', value: data.contactNumber, icon: <Phone size={14} className="text-sky-500" /> },
+      { label: 'Address', value: data.address, icon: <MapPin size={14} className="text-sky-500" /> },
+      { label: 'Emergency', value: data.emergencyContact, icon: <Phone size={14} className="text-amber-500" /> }
+    ].filter((item) => item.value);
 
     return (
-      <div className="flex flex-col h-full bg-white rounded-xl overflow-hidden border border-slate-200 shadow-lg relative">
-        <input
-          type="file"
-          ref={logoInputRef}
-          className="hidden"
-          accept="image/*"
-          onChange={handleLogoFileChange}
-        />
-        {/* Header with Curve */}
-        <div
-          className="relative h-[180px] overflow-hidden"
-          style={{ backgroundColor: primaryColor }}
-        >
-	          {/* Visible Color Picker Button (editor-only, hidden on print/export) */}
-	          <div className="absolute top-2 right-2 z-30 no-print no-export">
-            <label
-              className="w-8 h-8 rounded-full border-2 border-white shadow-lg hover:scale-110 transition-transform flex items-center justify-center cursor-pointer bg-white/20 backdrop-blur-sm"
-              title="Change card color"
-            >
-              <span className="text-lg pointer-events-none">🎨</span>
-              <input
-                type="color"
-                value={primaryColor}
-                onChange={handleColorChange}
-                className="absolute opacity-0 w-0 h-0"
-              />
-            </label>
-          </div>
-          {/* Curve SVG */}
-          <div className="absolute bottom-0 left-0 right-0">
-            <svg viewBox="0 0 1440 320" className="w-full h-auto block translate-y-1">
-              <path fill="#ffffff" fillOpacity="1" d="M0,224L80,213.3C160,203,320,181,480,181.3C640,181,800,203,960,213.3C1120,224,1280,224,1360,224L1440,224L1440,320L1360,320C1280,320,1120,320,960,320C800,320,640,320,480,320C320,320,160,320,80,320L0,320Z"></path>
+      <>
+        {/* Lanyard Hole */}
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 w-16 h-3 bg-slate-100 rounded-full z-20 shadow-inner flex justify-center items-center">
+          <div className="w-10 h-1.5 bg-slate-300 rounded-full"></div>
+        </div>
+
+        {/* Header */}
+        <div className={`h-40 ${headerBg} relative overflow-hidden rounded-b-[28px]`}>
+          <div className="absolute inset-0 opacity-20">
+            <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <pattern id={`grid-${data.id}`} width="24" height="24" patternUnits="userSpaceOnUse">
+                  <path d="M 24 0 L 0 0 0 24" fill="none" stroke="white" strokeWidth="1" />
+                </pattern>
+              </defs>
+              <rect width="100%" height="100%" fill={`url(#grid-${data.id})`} />
             </svg>
           </div>
-
-          <div className="relative z-10 flex items-start p-3 gap-2 pt-4">
-            {/* Logo Placeholder */}
-            <div
-              className={`w-14 h-14 flex items-center justify-center flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity overflow-hidden ${templateSettings.logo ? '' : 'rounded-full bg-white border-2 border-yellow-400 shadow-md'
-                }`}
-              onClick={handleLogoClick}
-              title="Click to upload school logo"
-            >
-              {templateSettings.logo ? (
-                <img src={templateSettings.logo} alt="Logo" className="w-full h-full object-contain" />
-              ) : (
-                <div className="text-blue-700 font-bold text-xl">
-                  {templateSettings.brandName.slice(0, 1).toUpperCase()}
-                </div>
-              )}
+          {brandTagline && (
+            <div className="absolute top-4 left-4 text-[10px] font-bold uppercase tracking-[0.2em] text-white/80">
+              {brandTagline}
             </div>
-
-            {/* School Details */}
-            <div className="text-white flex-1 text-center pr-2">
-              <h2 className="text-lg font-bold leading-tight mb-0.5 drop-shadow-md line-clamp-2">{templateSettings.brandName}</h2>
-              <p className="text-[9px] font-medium opacity-90 mb-0.5">(Govt. Recognised)</p>
-              {(() => {
-                const schoolAddress =
-                  templateSettings.address ||
-                  (data.address ? data.address.split(',').slice(1).join(',') : '');
-                return schoolAddress ? (
-                  <p className="text-[9px] leading-tight opacity-90 max-w-[180px] mx-auto line-clamp-2">
-                    {schoolAddress}
-                  </p>
-                ) : null;
-              })()}
-              <div className="mt-0.5 bg-blue-800/50 inline-block px-2 py-0.5 rounded text-[10px] font-bold border border-blue-400/30">
-                Phone No.: {templateSettings.contactNumber}
-              </div>
-            </div>
+          )}
+          <div className="absolute inset-x-6 bottom-4 text-center text-white space-y-1">
+            <p className="text-lg font-black leading-tight drop-shadow-sm">{brandName}</p>
+            {brandAddress && <p className="text-xs text-white/90 leading-snug">{brandAddress}</p>}
+            {brandPhone && <p className="text-[11px] font-semibold tracking-wide">Phone: {brandPhone}</p>}
           </div>
         </div>
 
-        {/* Photo Section */}
-        <div className="relative z-20 flex flex-col items-center -mt-16">
-          <div
-            className="w-28 h-32 bg-white p-1 shadow-lg border border-slate-200 cursor-pointer group relative"
-            onClick={handleImageClick}
-            title="Click to upload photo"
-          >
+        {/* Avatar */}
+        <div className="flex flex-col items-center -mt-14 px-6">
+          <div className="w-24 h-24 rounded-2xl bg-white border-4 border-white shadow-lg overflow-hidden relative">
             {data.image ? (
               <img
                 src={data.image}
                 alt={data.name}
-                className="w-full h-full object-cover object-center border border-slate-100"
+                className="w-full h-full object-cover"
                 onLoad={handleImageLoad}
                 onError={handleImageError}
               />
             ) : (
-              <div className="w-full h-full bg-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-slate-200 transition-colors">
-                <Plus className="opacity-50 group-hover:opacity-100 transition-opacity" size={24} />
-              </div>
-            )}
-            {/* Hover overlay for existing image */}
-            {data.image && (
-              <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                <Edit2 className="text-white" size={20} />
-              </div>
-            )}
-          </div>
-          <h1 className="text-xl font-bold text-slate-900 mt-2">{data.name}</h1>
-        </div>
-
-        {/* Data Table */}
-        <div className="px-6 mt-4 flex-1">
-          <div className="border-t border-slate-200">
-            <table className="w-full text-sm">
-              <tbody className="divide-y divide-slate-100">
-                {(templateSettings.layout?.table || ['fatherName', 'motherName', 'dob', 'contactNumber', 'bloodGroup']).map((fieldKey) => {
-                  // Get the value from data
-                  const value = (data as any)[fieldKey] || (data.extraFields || {})[fieldKey];
-                  if (!value) return null;
-
-                  // Get the label
-                  const fieldLabels: Record<string, string> = {
-                    fatherName: "Father's Name",
-                    motherName: "Mother's Name",
-                    dob: 'D.O.B.',
-                    contactNumber: 'Contact No.',
-                    bloodGroup: 'Blood Group',
-                    address: 'Address',
-                    schoolId: 'School ID',
-                    className: 'Class',
-                    section: 'Section',
-                    ...templateSettings.layout?.defaults
-                  };
-
-                  const label = fieldLabels[fieldKey] || fieldKey.replace(/([A-Z])/g, ' $1').trim();
-                  const displayValue = fieldKey === 'dob' ? formatDateShort(value) : value;
-
-                  return (
-                    <tr key={fieldKey}>
-                      <td className="py-1.5 font-semibold text-slate-600 w-1/3">{label}</td>
-                      <td className="py-1.5 text-slate-800 pl-2">{displayValue}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Dynamic Footer Fields */}
-          {(templateSettings.layout?.footer || ['address']).some(fieldKey => {
-            const value = (data as any)[fieldKey] || (data.extraFields || {})[fieldKey];
-            return !!value;
-          }) && (
-              <div className="mt-3 pt-2 border-t border-slate-200">
-                {(templateSettings.layout?.footer || ['address']).map((fieldKey) => {
-                  const value = (data as any)[fieldKey] || (data.extraFields || {})[fieldKey];
-                  if (!value) return null;
-
-                  const fieldLabels: Record<string, string> = {
-                    address: 'Add.',
-                    className: 'Class',
-                    section: 'Section',
-                    ...templateSettings.layout?.defaults
-                  };
-
-                  const label = fieldLabels[fieldKey] || fieldKey.replace(/([A-Z])/g, ' $1').trim();
-
-                  return (
-                    <p key={fieldKey} className="text-[11px] text-slate-600 leading-tight mb-1">
-                      <span className="font-bold">{label}:</span> {value}
-                    </p>
-                  );
-                })}
-              </div>
-            )}
-
-          {/* Custom extra fields */}
-          {(() => {
-            const customExtras = getCustomFields(
-              data.extraFields,
-              [
-                ...(templateSettings.layout?.table || []),
-                ...(templateSettings.layout?.footer || []),
-                'address'
-              ],
-              hiddenFields
-            );
-            if (customExtras.length === 0) return null;
-            return (
-              <div className="mt-4 pt-3 border-t border-slate-200">
-                <div className="sr-only">Additional fields</div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {customExtras.map(({ key, value }) => (
-                    <div key={key} className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                      <p className="text-[10px] uppercase text-slate-400 font-bold tracking-[0.12em] truncate">{key}</p>
-                      <p className="text-[12px] font-semibold text-slate-800 break-words leading-snug">{value}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
-
-          {Array.isArray(data.tracks) && data.tracks.length > 0 && (
-            <div className="mt-4">
-              <p className="text-[11px] uppercase text-slate-400 font-bold mb-2">Tracks / Tags</p>
-              <div className="flex flex-wrap gap-2">
-                {data.tracks.map((track, idx) => (
-                  <span key={idx} className="px-3 py-1 rounded-full bg-slate-100 text-[11px] font-semibold text-slate-700 border border-slate-200">
-                    {track}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 pb-4 pt-2 flex items-end justify-between mt-auto">
-          <input
-            type="file"
-            ref={signInputRef}
-            className="hidden"
-            accept="image/*"
-            onChange={handleSignFileChange}
-          />
-          <div className="text-sm font-bold text-slate-800">
-            Class : {formatClass(data.className, data.section) || '1st'}
-          </div>
-          <div
-            className="flex flex-col items-center gap-1 cursor-pointer group"
-            onClick={handleSignClick}
-            title="Click to upload principal signature"
-          >
-            <div className="w-20 h-8 flex items-end justify-center relative">
-              {templateSettings.principalSign ? (
-                <img
-                  src={templateSettings.principalSign}
-                  alt="Principal Signature"
-                  className="w-full h-full object-contain"
-                />
-              ) : (
-                <div className="font-cursive text-blue-800 text-lg leading-none transform -rotate-6 group-hover:opacity-70 transition-opacity">Sign</div>
-              )}
-            </div>
-            <div className="text-[10px] font-bold text-slate-700 uppercase tracking-wide group-hover:text-blue-600 transition-colors">Principal Sign.</div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderConferenceCard = () => {
-    const heroGradient = {
-      backgroundImage: `linear-gradient(135deg, ${palette.primary}, ${palette.accent})`
-    };
-    const eventName = data.eventName || templateSettings.brandName || '';
-    const eventSubtitle = data.eventSubtitle || templateSettings.brandTagline || '';
-    const eventRange = formatDateRange(data.eventStartDate, data.eventEndDate);
-    const validityRange = formatDateRange(data.validFrom, data.validTo);
-    const sponsor = data.sponsor || templateSettings.footerNote || '';
-    const barcodeText = data.barcodeValue || data.registrationId;
-    const roleLine = data.jobTitle || data.role || data.company;
-    const location = data.address || templateSettings.address;
-    const passLabel = data.passType || 'General Entry';
-    const customFields = getCustomFields(data.extraFields, ['address'], hiddenFields);
-
-    return (
-      <div className={`flex flex-col h-full bg-white rounded-[28px] overflow-hidden border ${borderColor} shadow-2xl relative`}>
-        <div className="relative h-48 overflow-hidden">
-          <div className="absolute inset-0" style={heroGradient}></div>
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.12),transparent_35%),radial-gradient(circle_at_80%_10%,rgba(255,255,255,0.18),transparent_30%)]"></div>
-          <div className="absolute inset-0 bg-gradient-to-b from-slate-900/20 via-slate-900/40 to-slate-900/60 mix-blend-overlay"></div>
-          <div className="absolute top-4 right-4 w-16 h-16 rounded-full border border-white/20 bg-white/5 backdrop-blur"></div>
-          {(eventName || eventSubtitle) && (
-            <div className="absolute top-5 left-6 right-24 text-white space-y-1">
-              {eventSubtitle && <p className="text-[11px] uppercase tracking-[0.24em] font-semibold text-white/80 line-clamp-1">{eventSubtitle}</p>}
-              {eventName && <h3 className="text-2xl font-black leading-snug line-clamp-2">{eventName}</h3>}
-            </div>
-          )}
-          <div className="absolute bottom-4 left-6 text-white/90 space-y-1 text-sm">
-            {eventRange && (
-              <div className="flex items-center gap-2">
-                <CalendarDays size={14} className="opacity-80" />
-                <span className="font-semibold tracking-wide">{eventRange}</span>
-              </div>
-            )}
-            {location && (
-              <div className="flex items-center gap-2 text-white/80 text-[13px]">
-                <MapPin size={14} className="opacity-80" />
-                <span className="line-clamp-1">{location}</span>
-              </div>
-            )}
-          </div>
-          <div className="absolute -bottom-1 left-0 right-0 text-white">
-            <svg viewBox="0 0 500 60" preserveAspectRatio="none" className="w-full h-12">
-              <path d="M0,30 C120,60 180,0 320,35 C420,60 500,10 500,10 L500,60 L0,60 Z" fill="#ffffff"></path>
-            </svg>
-          </div>
-        </div>
-
-        <div className="flex-1 px-6 pb-5 pt-0 relative flex flex-col">
-          <div className="relative w-full flex justify-center -mt-14">
-            <div className="relative group/avatar cursor-pointer" onClick={handleImageClick}>
-              {renderAvatar('w-28 h-28')}
-              <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity no-export rounded-full">
-                <Plus className="text-white" size={32} />
-              </div>
-            </div>
-          </div>
-
-          <h1
-            className="mt-3 text-2xl font-black text-slate-900 leading-tight text-center line-clamp-2 cursor-pointer"
-            onClick={(e) => { e.stopPropagation(); triggerFieldEdit('name'); }}
-          >
-            {data.name}
-          </h1>
-          {roleLine && (
-            <p
-              className="text-sm font-semibold text-indigo-600 text-center mt-1 line-clamp-2 cursor-pointer"
-              onClick={(e) => { e.stopPropagation(); triggerFieldEdit('jobTitle'); }}
-            >
-              {roleLine}
-            </p>
-          )}
-
-          <div className="mt-4 flex justify-center">
-            <div className="bg-gradient-to-r from-sky-500 to-indigo-600 text-white px-4 py-3 rounded-2xl shadow-lg shadow-indigo-500/30 flex items-center gap-3">
-              <div className="text-sm font-black tracking-wide uppercase">Pass</div>
-              <div className="text-left">
-                <p className="text-[11px] uppercase text-white/80 font-semibold leading-tight">Category</p>
-                <p className="text-base font-black leading-none">{passLabel}</p>
-              </div>
-            </div>
-          </div>
-
-          {validityRange && (
-            <div
-              className="mt-4 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 flex items-center justify-between cursor-pointer"
-              onClick={(e) => { e.stopPropagation(); triggerFieldEdit('validity'); }}
-            >
-              <div className="flex items-center gap-2 text-slate-500">
-                <CalendarDays size={14} />
-                <span className="text-[11px] uppercase tracking-[0.14em] font-bold">Validity</span>
-              </div>
-              <span className="text-sm font-semibold text-slate-800">{validityRange}</span>
-            </div>
-          )}
-
-          {!isHidden('Registration ID') && (
-            <div
-              className="mt-3 bg-white border border-slate-200 rounded-xl px-4 py-3 flex items-center justify-between shadow-sm cursor-pointer"
-              onClick={(e) => { e.stopPropagation(); triggerFieldEdit('registrationId'); }}
-            >
-              <div className="flex items-center gap-2 text-slate-500">
-                <Ticket size={14} />
-                <span className="text-[11px] uppercase tracking-[0.14em] font-bold">ID</span>
-              </div>
-              <span className="text-sm font-mono font-semibold text-slate-800">{data.registrationId}</span>
-            </div>
-          )}
-
-          {(customFields.length > 0 || sponsor || barcodeText) && (
-            <div className="mt-auto pt-5 space-y-4">
-              {(customFields.length > 0 || sponsor) && (
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 shadow-inner">
-                  {customFields.length > 0 && (
-                    <div className="grid grid-cols-2 gap-2 auto-rows-fr">
-                      {customFields.slice(0, 8).map(({ key, value }) => (
-                        <div
-                          key={key}
-                          className="bg-white border border-slate-200 rounded-lg px-3 py-2 flex flex-col justify-between min-h-[64px] cursor-pointer"
-                          onClick={(e) => { e.stopPropagation(); triggerFieldEdit(`custom:${key}`); }}
-                        >
-                          <p className="text-[9px] uppercase text-slate-400 font-bold tracking-[0.12em] truncate">{key}</p>
-                          <p className="text-[11px] font-semibold text-slate-800 break-words leading-snug line-clamp-3">{value}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {customFields.length > 8 && (
-                    <p className="mt-2 text-[10px] text-slate-500">+{customFields.length - 8} more fields hidden</p>
-                  )}
-                  {sponsor && (
-                    <div className="mt-3">
-                      <p className="text-[10px] uppercase text-slate-400 font-bold tracking-[0.16em]">Sponsored By</p>
-                      <p className="text-sm font-semibold text-slate-800 line-clamp-2">{sponsor}</p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {barcodeText && (
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 flex items-center justify-between shadow-inner">
-                  <div className="text-left">
-                    <p className="text-[10px] uppercase text-slate-400 font-bold tracking-[0.14em]">Scan / Barcode</p>
-                    <p className="text-[11px] font-mono text-slate-600">{barcodeText}</p>
-                  </div>
-                  <div className="bg-white p-2 rounded-xl shadow-lg border border-slate-200">
-                    {qrDataUrl ? (
-                      <img src={qrDataUrl} alt="QR" className="w-14 h-14" />
-                    ) : (
-                      <QrCode size={44} />
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const renderEmployeeCard = () => {
-    const heroGradient = { backgroundImage: `linear-gradient(135deg, ${palette.primary}, ${palette.accent})` };
-    const company = data.company || templateSettings.brandName || 'Organization';
-    const tagline = data.passType || templateSettings.brandTagline || '';
-    const employeeId = data.registrationId || data.schoolId || data.barcodeValue || data.id;
-    const joinDate = data.validFrom || data.eventStartDate || '';
-    const expiryDate = data.validTo || data.eventEndDate || '';
-    const emergency = data.contactNumber || templateSettings.contactNumber || '';
-    const qrText = data.barcodeValue || data.registrationId || data.id;
-    const role = data.jobTitle || data.role || templateSettings.badgeLabel || 'Employee';
-
-    return (
-      <div className="flex flex-col h-full bg-white rounded-[26px] overflow-hidden border border-slate-200 shadow-2xl relative">
-        <div className="relative h-40 overflow-hidden">
-          <div className="absolute inset-0" style={heroGradient}></div>
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_30%,rgba(255,255,255,0.16),transparent_40%),radial-gradient(circle_at_80%_20%,rgba(255,255,255,0.12),transparent_35%)]"></div>
-          <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 w-[120%] h-20 bg-white rounded-[50%]"></div>
-          <div className="relative z-10 text-center text-white pt-6 px-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-white/80">Employee ID</p>
-            <h2
-              className="text-lg font-bold leading-tight cursor-pointer"
-              onClick={(e) => { e.stopPropagation(); triggerFieldEdit('company'); }}
-            >
-              {company}
-            </h2>
-            {tagline && (
-              <p
-                className="text-[11px] text-white/80 mt-1 line-clamp-2 cursor-pointer"
-                onClick={(e) => { e.stopPropagation(); triggerFieldEdit('passType'); }}
-              >
-                {tagline}
-              </p>
-            )}
-          </div>
-        </div>
-
-        <div className="relative flex flex-col items-center px-6 -mt-12 z-10">
-          <div className="w-28 h-28 rounded-full border-4 border-white shadow-xl overflow-hidden bg-white">
-            {data.image ? (
-              <img src={data.image} alt={data.name} className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-slate-500">
-                {data.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
-              </div>
-            )}
-          </div>
-
-          <div className="w-full mt-4 space-y-3 text-center">
-            <div
-              className="rounded-lg px-4 py-2 text-white font-bold shadow-lg cursor-pointer"
-              style={{ background: palette.primary }}
-              onClick={(e) => { e.stopPropagation(); triggerFieldEdit('name'); }}
-            >
-              {data.name || 'Employee'}
-            </div>
-            <div
-              className="text-white font-semibold px-4 py-2 shadow-md cursor-pointer"
-              style={{ background: palette.accent, clipPath: 'polygon(0 0, 100% 0, 85% 100%, 0 100%)' }}
-              onClick={(e) => { e.stopPropagation(); triggerFieldEdit('jobTitle'); }}
-            >
-              {role}
-            </div>
-          </div>
-        </div>
-
-        <div className="px-6 mt-6 space-y-2 text-sm text-slate-700">
-          <div className="flex items-center justify-between cursor-pointer" onClick={(e) => { e.stopPropagation(); triggerFieldEdit('registrationId'); }}>
-            <span className="font-semibold text-slate-600">Employee ID</span>
-            <span className="font-mono text-slate-800">{employeeId}</span>
-          </div>
-          {joinDate && (
-            <div className="flex items-center justify-between cursor-pointer" onClick={(e) => { e.stopPropagation(); triggerFieldEdit('validFrom'); }}>
-              <span className="font-semibold text-slate-600">Joining Date</span>
-              <span className="text-slate-800">{formatDateShort(joinDate) || joinDate}</span>
-            </div>
-          )}
-          {expiryDate && (
-            <div className="flex items-center justify-between cursor-pointer" onClick={(e) => { e.stopPropagation(); triggerFieldEdit('validTo'); }}>
-              <span className="font-semibold text-slate-600">Card Expiry</span>
-              <span className="text-slate-800">{formatDateShort(expiryDate) || expiryDate}</span>
-            </div>
-          )}
-          {emergency && (
-            <div className="flex items-center justify-between cursor-pointer" onClick={(e) => { e.stopPropagation(); triggerFieldEdit('contactNumber'); }}>
-              <span className="font-semibold text-slate-600">Emergency</span>
-              <span className="text-slate-800">{emergency}</span>
-            </div>
-          )}
-        </div>
-
-        <div className="px-6 py-4 mt-auto flex items-center justify-between gap-3">
-          <div className="cursor-pointer" onClick={(e) => { e.stopPropagation(); triggerFieldEdit('barcodeValue'); }}>
-            <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500 font-bold">Verify by scanning</p>
-            <p className="text-[12px] text-slate-700">{employeeId}</p>
-          </div>
-          <div className="bg-white border border-slate-200 p-2 rounded-xl shadow">
-            {qrText && qrDataUrl ? (
-              <img src={qrDataUrl} alt="QR code" className="w-16 h-16" />
-            ) : (
-              <QrCode size={60} className="text-slate-600" />
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderMinimalCard = () => (
-    <div className="flex flex-col h-full bg-white rounded-[24px] overflow-hidden border border-slate-100 shadow-xl relative group">
-      {/* Abstract Background Shapes */}
-      <div className="absolute top-0 left-0 right-0 h-64 overflow-hidden z-0">
-        <div className="absolute -top-20 -right-20 w-64 h-64 rounded-full bg-gradient-to-br from-indigo-100/50 to-purple-100/50 blur-3xl"></div>
-        <div className="absolute top-10 -left-10 w-48 h-48 rounded-full bg-gradient-to-tr from-blue-100/40 to-teal-100/40 blur-2xl"></div>
-      </div>
-
-      {/* Header / Avatar Section */}
-      <div className="relative z-10 flex flex-col items-center pt-8 pb-2 px-6">
-        <div className="relative mb-3 group-hover:scale-105 transition-transform duration-500 ease-out">
-          <div className="absolute inset-0 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-full blur-md opacity-20 group-hover:opacity-40 transition-opacity"></div>
-          <div
-            className="w-24 h-24 rounded-full p-1 bg-white shadow-lg relative overflow-hidden cursor-pointer"
-            onClick={(e) => { e.stopPropagation(); triggerFieldEdit('image'); }}
-          >
-            {data.image ? (
-              <img
-                src={data.image}
-                alt={data.name}
-                className="w-full h-full object-cover object-center rounded-full"
-                onLoad={handleImageLoad}
-                onError={handleImageError}
-              />
-            ) : (
-              <div className={`w-full h-full rounded-full flex items-center justify-center text-2xl font-bold text-slate-700 bg-slate-50`}>
+              <div className="w-full h-full flex items-center justify-center text-3xl font-bold text-slate-700 relative">
+                <div className={`absolute inset-0 opacity-10 ${headerBg}`}></div>
                 {data.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
               </div>
             )}
-          </div>
-          {/* Status Indicator */}
-          <div className="absolute bottom-1 right-1 w-5 h-5 bg-white rounded-full flex items-center justify-center shadow-sm">
-            <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></div>
-          </div>
-        </div>
-
-        <h2
-          className="text-xl font-black text-slate-800 text-center leading-tight mb-1 line-clamp-1 cursor-pointer"
-          onClick={(e) => { e.stopPropagation(); triggerFieldEdit('name'); }}
-        >
-          {data.name}
-        </h2>
-        <div className="px-3 py-0.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-600 text-[10px] font-bold tracking-wide uppercase">
-          {templateSettings.badgeLabel || 'Student'}
-        </div>
-      </div>
-
-      {/* Info Grid */}
-      <div className="relative z-10 flex-1 px-5 py-1 flex flex-col justify-center">
-        <div className="bg-slate-50/80 backdrop-blur-sm rounded-xl p-3 border border-slate-100 space-y-2">
-          <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5 cursor-pointer" onClick={(e) => { e.stopPropagation(); triggerFieldEdit('registrationId'); }}>
-            <div className="w-7 h-7 rounded-full bg-white flex items-center justify-center text-slate-400 shadow-sm border border-slate-100">
-              <Hash size={12} />
-            </div>
-            <div>
-              <p className="text-[9px] uppercase text-slate-400 font-bold tracking-wider">ID Number</p>
-                <p className="text-xs font-bold text-slate-700 font-mono">{data.schoolId || data.registrationId}</p>
+            {isImageLoading && (
+              <div className="absolute inset-0 bg-white/70 flex items-center justify-center no-export">
+                <div className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin"></div>
               </div>
+            )}
+
+            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity no-export cursor-pointer" onClick={handleImageClick}>
+              <Plus className="text-white" size={32} />
             </div>
+            <input
+              type="file"
+              ref={fileInputRef}
+              className="hidden"
+              accept="image/*"
+              onChange={handleFileChange}
+            />
           </div>
-
-          <div className="w-full h-px bg-slate-200/60"></div>
-
-          <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5 cursor-pointer" onClick={(e) => { e.stopPropagation(); triggerFieldEdit('className'); }}>
-            <div className="w-7 h-7 rounded-full bg-white flex items-center justify-center text-slate-400 shadow-sm border border-slate-100">
-              <Building2 size={12} />
-            </div>
-            <div>
-                <p className="text-[9px] uppercase text-slate-400 font-bold tracking-wider">Class / Section</p>
-                <p className="text-xs font-bold text-slate-700">{formatClass(data.className, data.section) || data.passType}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="w-full h-px bg-slate-200/60"></div>
-
-          <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5 cursor-pointer" onClick={(e) => { e.stopPropagation(); triggerFieldEdit('contactNumber'); }}>
-            <div className="w-7 h-7 rounded-full bg-white flex items-center justify-center text-slate-400 shadow-sm border border-slate-100">
-              <Phone size={12} />
-            </div>
-            <div>
-              <p className="text-[9px] uppercase text-slate-400 font-bold tracking-wider">Emergency</p>
-                <p className="text-xs font-bold text-slate-700">{data.contactNumber || templateSettings.contactNumber}</p>
-              </div>
-            </div>
+          <div className="mt-3 text-center space-y-0.5">
+            <h1 className="text-2xl font-black text-slate-800 leading-tight">{data.name}</h1>
+            <p className="text-xs uppercase text-slate-500 tracking-wide flex items-center justify-center gap-1">
+              <BadgeCheck size={12} /> Student ID: {studentId}
+            </p>
+            {studentClass && <p className="text-xs text-slate-500">{studentClass}</p>}
           </div>
         </div>
-      </div>
 
-      {/* Footer */}
-      <div className="relative z-10 px-5 pb-5 pt-1">
-        <div className="flex items-center gap-2 text-slate-500 bg-white rounded-lg p-2.5 border border-slate-100 shadow-sm">
-          <MapPin size={14} className="text-indigo-500 flex-shrink-0" />
-          <p
-            className="text-[10px] font-medium leading-snug line-clamp-2 cursor-pointer"
-            onClick={(e) => { e.stopPropagation(); triggerFieldEdit('address'); }}
-          >
-            {data.address || templateSettings.address}
-          </p>
+        <div className="px-6 pt-3 pb-4 space-y-2 flex-1">
+          {schoolFields.length > 0 && schoolFields.map((item) => renderSchoolRow(item.label, item.value, item.icon))}
         </div>
-        {(() => {
-          const footerCustomFields = getCustomFields(data.extraFields, [], hiddenFields);
-          if (footerCustomFields.length === 0) return null;
-          return (
-            <div className="mt-3 bg-white rounded-lg border border-slate-100 p-3 shadow-sm space-y-2 max-h-32 overflow-y-auto custom-scrollbar">
-              {footerCustomFields.map(({ key, value }) => (
+
+        <div className="px-6 pb-4 pt-1">
+          <div className="flex items-center justify-between text-[11px] uppercase text-slate-500 font-semibold tracking-wide">
+            <span>Principal Sign.</span>
+            <span className="text-slate-700 font-bold">{brandTagline || 'Govt. Recognised'}</span>
+          </div>
+        </div>
+
+        <div className={`h-1.5 w-full bg-gradient-to-r ${accentGradient}`}></div>
+      </>
+    );
+  };
+
+  // Helper function to get element value from data
+  // ONLY looks up data from extras using the element's custom label
+  // This ensures data ONLY maps to elements the user explicitly created and labeled
+  const getElementValue = (key: string): string => {
+    // Get the label for this element (custom label or the key itself for standard elements)
+    const label = customLabels[key] || key;
+
+    // Look for data in extras using this label (case-insensitive match)
+    if (data.extras) {
+      // First try exact match
+      if (data.extras[label]) {
+        return data.extras[label];
+      }
+      // Try case-insensitive match
+      const lowerLabel = label.toLowerCase();
+      for (const [extraKey, extraValue] of Object.entries(data.extras)) {
+        if (extraKey.toLowerCase() === lowerLabel) {
+          return String(extraValue);
+        }
+      }
+    }
+
+    // Return the label as fallback text (so the element still shows)
+    return label;
+  };
+
+  // New layout-aware card renderer that uses actual layout positions
+  const renderCustomLayoutCard = () => {
+    if (!layout) return null;
+
+    // Type for element position
+    type ElementPosition = { x: number; y: number; visible: boolean; fontSize?: number; width?: number };
+
+    // Get all visible elements from layout
+    const visibleElements = Object.entries(layout).filter(([, pos]) => (pos as ElementPosition)?.visible) as [string, ElementPosition][];
+
+    return (
+      <>
+        {/* Lanyard hole */}
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 w-16 h-3 bg-slate-100 rounded-full z-20 shadow-inner flex justify-center items-center">
+          <div className="w-10 h-1.5 bg-slate-300 rounded-full"></div>
+        </div>
+
+        {/* Header gradient (top 26%) */}
+        <div className={`absolute top-0 left-0 right-0 h-[26%] bg-gradient-to-br ${accentGradient}`}>
+          <div className="absolute inset-0 opacity-20">
+            <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <pattern id={`grid-custom-${data.id}`} width="20" height="20" patternUnits="userSpaceOnUse">
+                  <path d="M 20 0 L 0 0 0 20" fill="none" stroke="white" strokeWidth="1" />
+                </pattern>
+              </defs>
+              <rect width="100%" height="100%" fill={`url(#grid-custom-${data.id})`} />
+            </svg>
+          </div>
+        </div>
+
+        {/* White body area */}
+        <div className="absolute top-[26%] left-0 right-0 bottom-0 bg-white rounded-b-2xl" />
+
+        {/* Position-based elements rendering */}
+        <div className="absolute inset-0 overflow-hidden">
+          {visibleElements.map(([key, pos]) => {
+            if (!pos) return null;
+
+
+            // Handle Photo element (both main 'image' and custom 'customPhoto' elements)
+            if (key === 'image' || key.startsWith('customPhoto')) {
+              const size = Math.round(280 * (pos.width || 20) / 100);
+              return (
                 <div
                   key={key}
-                  className="text-[11px] text-slate-600 flex justify-between gap-2 cursor-pointer"
-                  onClick={(e) => { e.stopPropagation(); triggerFieldEdit(`custom:${key}`); }}
+                  className="absolute z-10 group/avatar cursor-pointer"
+                  style={{
+                    left: `${pos.x}%`,
+                    top: `${pos.y}%`,
+                    transform: 'translate(-50%, -50%)'
+                  }}
+                  onClick={handleImageClick}
                 >
-                  <span className="uppercase tracking-[0.14em] font-bold text-slate-400 truncate">{key}</span>
-                  <span className="text-[12px] font-semibold text-slate-800 text-right leading-snug break-words">{value}</span>
+                  <div
+                    className="rounded-full bg-white border-4 border-white shadow-lg flex items-center justify-center overflow-hidden"
+                    style={{ width: `${size}px`, height: `${size}px` }}
+                  >
+                    {data.image ? (
+                      <img src={data.image} alt={data.name} className="w-full h-full object-cover" onLoad={handleImageLoad} onError={handleImageError} />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-slate-700 bg-slate-100">
+                        {data.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
+                  </div>
+                  <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
                 </div>
-              ))}
-            </div>
-          );
-        })()}
-        {qrValue && (
-          <div className="mt-3 bg-white rounded-lg border border-slate-100 p-3 shadow-sm flex items-center justify-between">
-            <div>
-              <p className="text-[10px] uppercase text-slate-400 font-bold tracking-[0.14em]">Scan / Barcode</p>
-              <p className="text-[11px] font-mono text-slate-700">{qrValue}</p>
-            </div>
-            <div className="bg-white border border-slate-200 p-2 rounded-lg shadow w-16 h-16 flex items-center justify-center">
-              {qrDataUrl ? (
-                <img src={qrDataUrl} alt="QR code" className="w-14 h-14" />
-              ) : (
-                <QrCode size={44} />
-              )}
+              );
+            }
+
+            // Handle QR Code element
+            if (key === 'qrCode') {
+              const size = Math.round(280 * (pos.width || 15) / 100);
+              return (
+                <div
+                  key={key}
+                  className="absolute z-10"
+                  style={{
+                    left: `${pos.x}%`,
+                    top: `${pos.y}%`,
+                    transform: 'translate(-50%, -50%)'
+                  }}
+                >
+                  <div className="flex flex-col items-center gap-1">
+                    <QRCodeSVG
+                      value={`${baseUrl}/verify/${data.verificationCode || data.id}`}
+                      size={size}
+                      bgColor="white"
+                      fgColor="#1e293b"
+                      level="M"
+                    />
+                  </div>
+                </div>
+              );
+            }
+
+            // Handle text elements
+            const value = getElementValue(key);
+            if (!value) return null;
+
+            const isInHeader = pos.y < 26;
+            return (
+              <div
+                key={key}
+                className="absolute z-10 whitespace-nowrap"
+                style={{
+                  left: `${pos.x}%`,
+                  top: `${pos.y}%`,
+                  transform: 'translate(-50%, -50%)',
+                  fontSize: `${pos.fontSize || 14}px`,
+                  fontWeight: key === 'name' ? 700 : 400,
+                  color: isInHeader ? 'white' : '#1e293b'
+                }}
+              >
+                {value}
+              </div>
+            );
+          })}
+        </div>
+      </>
+    );
+  };
+
+  const renderConferenceCard = () => (
+    <>
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 w-16 h-3 bg-slate-100 rounded-full z-20 shadow-inner flex justify-center items-center">
+        <div className="w-10 h-1.5 bg-slate-300 rounded-full"></div>
+      </div>
+
+      {/* Hero Header / Art */}
+      <div className={`h-36 ${headerBg} relative overflow-hidden`}>
+        {/* Abstract Pattern overlay */}
+        <div className="absolute inset-0 opacity-20">
+          <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                <path d="M 20 0 L 0 0 0 20" fill="none" stroke="white" strokeWidth="1" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#grid)" />
+          </svg>
+        </div>
+
+        <div className="absolute bottom-4 left-6 text-white">
+          <h3 className="text-xs font-bold tracking-[0.2em] uppercase opacity-80 mb-1">AGILE INDIA</h3>
+          <div className="flex items-center gap-2">
+            <div className="font-black text-2xl tracking-tighter">CONF<span className="opacity-75">2025</span></div>
+          </div>
+        </div>
+
+        {/* Role Badge */}
+        {data.role && (data.role === 'Speaker' || data.role === 'Organizer') && (
+          <div className="absolute top-8 right-6">
+            <div className="bg-white/90 text-slate-800 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-sm border border-white">
+              <Star size={12} className="text-amber-500" fill="currentColor" />
+              {data.role.toUpperCase()}
             </div>
           </div>
         )}
       </div>
-    </div>
+
+      {/* Body Content */}
+      <div className="flex-1 px-8 pt-8 pb-6 flex flex-col items-center text-center relative">
+
+        {/* Avatar Placeholder (Initials) or Image */}
+        <div className="relative -mt-20 z-10 group/avatar cursor-pointer no-print" onClick={handleImageClick}>
+          <div className="w-24 h-24 rounded-full bg-white border-4 border-white shadow-lg flex items-center justify-center overflow-hidden relative">
+            {data.image ? (
+              <img
+                src={data.image}
+                alt={data.name}
+                className="w-full h-full object-cover"
+                onLoad={handleImageLoad}
+                onError={handleImageError}
+              />
+            ) : (
+              <div className={`w-full h-full flex items-center justify-center text-3xl font-bold text-slate-700 relative`}>
+                <div className={`absolute inset-0 opacity-10 ${headerBg}`}></div>
+                {data.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+              </div>
+            )}
+            {isImageLoading && (
+              <div className="absolute inset-0 bg-white/70 flex items-center justify-center no-export">
+                <div className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin"></div>
+              </div>
+            )}
+
+            {/* Upload Overlay (Hidden in Export) */}
+            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity no-export">
+              <Plus className="text-white" size={32} />
+            </div>
+          </div>
+
+          {/* Plus Button Helper (Hidden in Export) */}
+          <div className="absolute bottom-0 right-0 bg-indigo-600 text-white p-1 rounded-full border-2 border-white shadow-md transform translate-y-1 opacity-0 group-hover/avatar:opacity-100 transition-opacity no-export">
+            <Plus size={14} />
+          </div>
+
+          <input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
+            accept="image/*"
+            onChange={handleFileChange}
+          />
+        </div>
+
+        {/* Printable Avatar (Static, no overlay) - used when printing or exporting if needed, but the logic above handles export via no-export class on overlay */}
+        <div className="w-24 h-24 rounded-full bg-white border-4 border-white shadow-lg -mt-20 z-10 hidden print:flex items-center justify-center overflow-hidden relative">
+          {data.image ? (
+            <img src={data.image} alt={data.name} className="w-full h-full object-cover" />
+          ) : (
+            <div className={`w-full h-full flex items-center justify-center text-3xl font-bold text-slate-700 relative`}>
+              <div className={`absolute inset-0 opacity-10 ${headerBg}`}></div>
+              {data.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+            </div>
+          )}
+        </div>
+
+        {/* Name */}
+        <h1 className="mt-4 text-2xl font-black text-slate-800 leading-tight line-clamp-2">
+          {data.name}
+        </h1>
+        {data.role && (data.role === 'Speaker' || data.role === 'Organizer') && (
+          <div className={`mt-2 inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold ${getRoleBadgeClasses(data.role)}`}>
+            <Star size={12} className="text-amber-500" />
+            <span>{data.role}</span>
+          </div>
+        )}
+
+        {/* Company */}
+        <div className="mt-2 flex items-center justify-center gap-1.5 text-slate-500 font-medium text-sm">
+          <Building2 size={14} />
+          <span className="uppercase tracking-wide truncate max-w-[200px]">{data.company}</span>
+        </div>
+
+        {/* Divider */}
+        <div className="w-12 h-1 bg-slate-100 rounded-full my-6"></div>
+
+        {/* Tracks / Details */}
+        <div className="w-full space-y-2">
+          <div className="flex justify-between items-center bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
+            <div className="flex items-center gap-2 text-slate-400">
+              <Ticket size={14} />
+              <span className="text-xs font-semibold uppercase">Access</span>
+            </div>
+            <span className="text-xs font-bold text-slate-700 text-right max-w-[140px] truncate">
+              {data.passType}
+            </span>
+          </div>
+
+          {/* Reg ID */}
+          <div className="flex justify-between items-center px-3">
+            <span className="text-[10px] text-slate-400 font-mono">ID: {data.registrationId}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Footer / QR */}
+      <div className="bg-slate-50 h-28 border-t border-slate-100 flex items-center justify-center px-8">
+        <div className="flex flex-col items-center gap-1">
+          <span className="text-[10px] uppercase text-slate-400 font-bold tracking-wider">Scan for Details</span>
+          <button
+            type="button"
+            onClick={() => setIsModalOpen(true)}
+            className="bg-white p-1 rounded-lg border border-slate-200 shadow-sm hover:ring-2 hover:ring-indigo-500 hover:border-transparent transition-all cursor-pointer group relative"
+            title="Click to view attendee details"
+          >
+            <QRCodeSVG
+              value={`${baseUrl}/verify/${data.verificationCode || data.id}`}
+              size={64}
+              bgColor="white"
+              fgColor="#1e293b"
+              level="M"
+            />
+            <div className="absolute inset-0 flex items-center justify-center bg-indigo-600/10 rounded opacity-0 group-hover:opacity-100 transition-opacity no-export">
+              <span className="sr-only">Scan</span>
+            </div>
+          </button>
+          <span className="text-[10px] font-medium text-slate-500 font-mono tracking-wider">{data.verificationCode || 'N/A'}</span>
+        </div>
+      </div>
+
+      {/* Decorative colored bar at very bottom */}
+      <div className={`h-1.5 w-full ${headerBg}`}></div>
+    </>
   );
 
-  const renderBody = () => {
-    if (template === 'school-classic') return renderSchoolCard();
-    if (template === 'employee-arc') return renderEmployeeCard();
-    if (template === 'mono-slim') return renderMinimalCard();
-    return renderConferenceCard();
-  };
+  const renderCompanyCard = () => (
+    <>
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 w-16 h-3 bg-slate-100 rounded-full z-20 shadow-inner flex justify-center items-center">
+        <div className="w-10 h-1.5 bg-slate-300 rounded-full"></div>
+      </div>
 
-  // Card width is fixed for consistency; height grows naturally with content so there is no extra empty space.
-  const sizeClass = 'w-[360px]';
+      <div className={`h-36 ${headerBg} relative overflow-hidden`}>
+        <div className="absolute inset-0 opacity-15">
+          <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <pattern id={`grid-corp-${data.id}`} width="24" height="24" patternUnits="userSpaceOnUse">
+                <path d="M 24 0 L 0 0 0 24" fill="none" stroke="white" strokeWidth="1" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill={`url(#grid-corp-${data.id})`} />
+          </svg>
+        </div>
+        <div className="absolute left-6 bottom-4 text-white space-y-1">
+          <p className="text-[11px] uppercase tracking-[0.2em] font-semibold opacity-80">Employee ID</p>
+          <h3 className="text-2xl font-black tracking-tight drop-shadow-sm">{data.company || 'Company'}</h3>
+          <p className="text-xs text-white/80">Issued by HR</p>
+        </div>
+        {data.role && (
+          <div className="absolute top-6 right-6 bg-white/90 text-slate-800 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-sm border border-white">
+            <Briefcase size={12} className="text-indigo-500" />
+            {data.role}
+          </div>
+        )}
+      </div>
 
+      <div className="flex-1 px-8 pt-8 pb-6 flex flex-col items-center text-center relative">
+        <div className="relative -mt-20 z-10 group/avatar cursor-pointer no-print" onClick={handleImageClick}>
+          <div className="w-24 h-24 rounded-xl bg-white border-4 border-white shadow-lg flex items-center justify-center overflow-hidden relative">
+            {data.image ? (
+              <img
+                src={data.image}
+                alt={data.name}
+                className="w-full h-full object-cover"
+                onLoad={handleImageLoad}
+                onError={handleImageError}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-3xl font-bold text-slate-700 relative">
+                <div className={`absolute inset-0 opacity-10 ${headerBg}`}></div>
+                {data.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+              </div>
+            )}
+            {isImageLoading && (
+              <div className="absolute inset-0 bg-white/70 flex items-center justify-center no-export">
+                <div className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin"></div>
+              </div>
+            )}
+
+            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity no-export">
+              <Plus className="text-white" size={32} />
+            </div>
+          </div>
+
+          <div className="absolute bottom-0 right-0 bg-indigo-600 text-white p-1 rounded-full border-2 border-white shadow-md transform translate-y-1 opacity-0 group-hover/avatar:opacity-100 transition-opacity no-export">
+            <Plus size={14} />
+          </div>
+
+          <input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
+            accept="image/*"
+            onChange={handleFileChange}
+          />
+        </div>
+
+        <h1 className="mt-4 text-2xl font-black text-slate-800 leading-tight line-clamp-2">
+          {data.name}
+        </h1>
+        <p className="text-sm text-slate-500">{data.passType || 'Employee'}</p>
+        <p className="text-xs uppercase text-slate-400 mt-1">ID: {data.registrationId || data.schoolId || 'Pending'}</p>
+
+        <div className="w-full mt-6 space-y-2">
+          <div className="flex justify-between items-center bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
+            <div className="flex items-center gap-2 text-slate-400">
+              <Building2 size={14} />
+              <span className="text-[11px] font-semibold uppercase">Department</span>
+            </div>
+            <span className="text-sm font-semibold text-slate-700 text-right max-w-[150px] truncate">
+              {data.tracks && data.tracks[0] ? data.tracks[0] : data.role || 'Staff'}
+            </span>
+          </div>
+          <div className="flex justify-between items-center bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
+            <div className="flex items-center gap-2 text-slate-400">
+              <Phone size={14} className="text-indigo-500" />
+              <span className="text-[11px] font-semibold uppercase">Contact</span>
+            </div>
+            <span className="text-sm font-semibold text-slate-700 text-right max-w-[150px] truncate">
+              {data.contactNumber || '—'}
+            </span>
+          </div>
+          {data.address && (
+            <div className="flex items-start gap-2 bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
+              <MapPin size={14} className="text-indigo-500 mt-0.5" />
+              <div>
+                <p className="text-[11px] font-semibold uppercase text-slate-500">Office</p>
+                <p className="text-sm font-semibold text-slate-700 leading-snug">{data.address}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-slate-50 h-28 border-t border-slate-100 flex items-center justify-center px-8">
+        <div className="flex flex-col items-center gap-1">
+          <span className="text-[10px] uppercase text-slate-400 font-bold tracking-wider">Scan for details</span>
+          <button
+            type="button"
+            onClick={() => setIsModalOpen(true)}
+            className="bg-white p-1 rounded-lg border border-slate-200 shadow-sm hover:ring-2 hover:ring-indigo-500 hover:border-transparent transition-all cursor-pointer group relative"
+            title="Click to view employee details"
+          >
+            <QRCodeSVG
+              value={`${baseUrl}/verify/${data.verificationCode || data.id}`}
+              size={64}
+              bgColor="white"
+              fgColor="#1e293b"
+              level="M"
+            />
+            <div className="absolute inset-0 flex items-center justify-center bg-indigo-600/10 rounded opacity-0 group-hover:opacity-100 transition-opacity no-export">
+              <span className="sr-only">Scan</span>
+            </div>
+          </button>
+          <span className="text-[10px] font-medium text-slate-500 font-mono tracking-wider">{data.verificationCode || 'N/A'}</span>
+        </div>
+      </div>
+
+      <div className={`h-1.5 w-full ${headerBg}`}></div>
+    </>
+  );
   return (
     <>
       <div
         id={`card-${data.id}`}
-        className={`relative ${sizeClass} bg-white rounded-[28px] overflow-hidden shadow-2xl flex flex-col print-break-inside-avoid transform transition-all duration-200 group border border-slate-200 hover:-translate-y-1 ${isSelected ? 'ring-4 ring-indigo-500 ring-offset-4 ring-offset-slate-900' : ''}`}
-        style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as CSSProperties}
+        className={`relative w-[320px] h-[500px] bg-white rounded-3xl overflow-hidden shadow-2xl flex flex-col border-[1px] ${isSelected ? 'ring-4 ring-indigo-500 ring-offset-4 ring-offset-slate-900' : ''} ${borderColor} print-break-inside-avoid transform transition-all hover:scale-[1.02] duration-300 group`}
       >
+        {/* Selection Checkbox (Hidden in Print and Export) */}
         <div className="absolute top-4 left-4 z-30 no-print no-export">
           <button
             onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
-            className={`w-7 h-7 rounded-lg border flex items-center justify-center transition-all shadow-sm backdrop-blur ${isSelected ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white/90 border-slate-300 text-slate-600 hover:border-indigo-400'}`}
+            className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${isSelected ? 'bg-indigo-600 border-indigo-600' : 'bg-white/20 border-white/50 hover:bg-white/40'}`}
           >
             {isSelected && <Check size={14} className="text-white" strokeWidth={3} />}
           </button>
         </div>
 
-        <div className="absolute top-4 right-4 z-30 no-print no-export flex flex-col gap-2 bg-white/85 backdrop-blur rounded-xl p-1 shadow-lg border border-slate-200/80">
+        {/* Action Buttons (Hidden in Print and Export, Visible on Hover) */}
+        <div className="absolute top-4 right-4 z-30 no-print no-export opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-2">
           <button
-            onClick={(e) => { e.stopPropagation(); onEdit(); }}
-            className="w-9 h-9 rounded-lg bg-white text-slate-700 border border-slate-200 hover:border-indigo-400 hover:text-indigo-600 transition-colors flex items-center justify-center"
-            title="Edit Details"
+            onClick={(e) => { e.stopPropagation(); onOpenTemplateEditor?.(); }}
+            className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-md border border-white/40 flex items-center justify-center text-white hover:bg-white hover:text-indigo-600 transition-colors shadow-sm"
+            title="Customize Layout"
           >
-            <Edit2 size={15} />
+            <Edit2 size={14} />
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            className="w-9 h-9 rounded-lg bg-white text-slate-700 border border-slate-200 hover:border-red-400 hover:text-red-600 transition-colors flex items-center justify-center"
+            className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-md border border-white/40 flex items-center justify-center text-white hover:bg-white hover:text-red-600 transition-colors shadow-sm"
             title="Delete Attendee"
           >
-            <Trash2 size={15} />
+            <Trash2 size={14} />
           </button>
           <button
             onClick={handleDownload}
-            className="w-9 h-9 rounded-lg bg-white text-slate-700 border border-slate-200 hover:border-emerald-400 hover:text-emerald-600 transition-colors flex items-center justify-center"
+            className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-md border border-white/40 flex items-center justify-center text-white hover:bg-white hover:text-emerald-600 transition-colors shadow-sm"
             title={`Download ${downloadFormat.toUpperCase()}`}
           >
-            <Download size={15} />
+            <Download size={14} />
           </button>
-          {onRequestBackgroundRemoval && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onRequestBackgroundRemoval(); }}
-              className="w-9 h-9 rounded-lg bg-white text-slate-700 border border-slate-200 hover:border-indigo-400 hover:text-indigo-600 transition-colors flex items-center justify-center disabled:cursor-wait disabled:opacity-70"
-              title="Remove background"
-              disabled={data.isProcessingImage}
-            >
-              <Wand2 size={15} />
-            </button>
-          )}
         </div>
 
-        <input
-          type="file"
-          ref={fileInputRef}
-          className="hidden"
-          accept="image/*"
-          onChange={handleFileChange}
-        />
-
-        {renderBody()}
+        {/* Use custom layout renderer when layout is provided, otherwise fall back to template-based renderers */}
+        {layout ? renderCustomLayoutCard() : (
+          template === 'school-classic' ? renderSchoolCard() : template === 'company-id' ? renderCompanyCard() : renderConferenceCard()
+        )}
       </div>
 
       {isModalOpen && createPortal(
@@ -1029,12 +763,13 @@ export const IDCard: React.FC<IDCardProps> = ({
             aria-label="Close modal"
           ></div>
 
-          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200">
+          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200">
 
+            {/* Modal Header */}
             <div className={`${headerBg} p-6 flex justify-between items-start`}>
               <div className="text-white">
-                <h2 className="text-xl font-bold">Card Details</h2>
-                <p className="text-white/80 text-sm mt-1">Scanned information</p>
+                <h2 className="text-xl font-bold">{template === 'school-classic' ? 'Student Profile' : 'Attendee Details'}</h2>
+                <p className="text-white/80 text-sm mt-1">Scanned Information</p>
               </div>
               <button
                 onClick={() => setIsModalOpen(false)}
@@ -1044,85 +779,110 @@ export const IDCard: React.FC<IDCardProps> = ({
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            {/* Modal Body */}
+            <div className="p-6 space-y-6">
               <div className="flex items-start gap-4">
-                <div className={`w-12 h-12 rounded-full bg-white border-2 border-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0`}>
+                <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0 border border-slate-200">
                   {data.image ? (
                     <img src={data.image} alt={data.name} className="w-full h-full object-cover" />
                   ) : (
-                    <div className={`w-full h-full flex items-center justify-center font-bold text-lg text-slate-700`}>
+                    <span className="font-bold text-lg text-slate-700">
                       {data.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                    </div>
+                    </span>
                   )}
                 </div>
                 <div>
                   <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Name</p>
                   <h3 className="text-lg font-bold text-slate-800">{data.name}</h3>
-                  <p className="text-xs text-slate-500">{formatClass(data.className, data.section) || data.passType}</p>
+                  {data.role && (
+                    <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                      <Star size={12} className="text-amber-500" />
+                      <span>{data.role}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 text-sm text-slate-700">
-                <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                  <div className="flex items-center gap-2 text-slate-400 mb-1">
-                    <Hash size={14} />
-                    <span className="text-[10px] font-bold uppercase">School ID</span>
-                  </div>
-                  <p className="font-mono font-semibold">{data.schoolId || data.registrationId}</p>
-                </div>
-                <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                  <div className="flex items-center gap-2 text-slate-400 mb-1">
-                    <CalendarDays size={14} />
-                    <span className="text-[10px] font-bold uppercase">D.O.B</span>
-                  </div>
-                  <p className="font-semibold">{formatDateShort(data.dob) || data.dob || '—'}</p>
-                </div>
+              <div className="grid grid-cols-2 gap-4">
                 <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
                   <div className="flex items-center gap-2 text-slate-400 mb-1">
                     <Building2 size={14} />
-                    <span className="text-[10px] font-bold uppercase">School</span>
+                    <span className="text-[10px] font-bold uppercase">{template === 'school-classic' ? 'School' : 'Company'}</span>
                   </div>
-                  <p className="font-semibold truncate" title={data.company}>{data.company}</p>
+                  <p className="font-semibold text-slate-700 text-sm truncate" title={data.company || data.schoolName}>{data.schoolName || data.company}</p>
                 </div>
+
                 <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
                   <div className="flex items-center gap-2 text-slate-400 mb-1">
-                    <Phone size={14} />
-                    <span className="text-[10px] font-bold uppercase">Contact</span>
+                    <Hash size={14} />
+                    <span className="text-[10px] font-bold uppercase">Reg ID</span>
                   </div>
-                  <p className="font-semibold">{data.contactNumber || templateSettings.contactNumber}</p>
+                  <p className="font-mono font-semibold text-slate-700 text-sm truncate" title={data.registrationId}>{data.registrationId}</p>
                 </div>
+
+                {template === 'school-classic' && (
+                  <>
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                      <div className="flex items-center gap-2 text-slate-400 mb-1">
+                        <Hash size={14} />
+                        <span className="text-[10px] font-bold uppercase">School ID</span>
+                      </div>
+                      <p className="font-semibold text-slate-700 text-sm truncate" title={data.schoolId || data.registrationId}>{data.schoolId || data.registrationId}</p>
+                    </div>
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                      <div className="flex items-center gap-2 text-slate-400 mb-1">
+                        <CalendarClock size={14} />
+                        <span className="text-[10px] font-bold uppercase">D.O.B</span>
+                      </div>
+                      <p className="font-semibold text-slate-700 text-sm truncate">{data.dateOfBirth || '—'}</p>
+                    </div>
+                  </>
+                )}
               </div>
 
-              {data.address && (
-                <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                  <div className="flex items-center gap-2 text-slate-400 mb-1">
-                    <MapPin size={14} />
-                    <span className="text-[10px] font-bold uppercase">Address</span>
-                  </div>
-                  <p className="text-slate-700 text-sm leading-snug">{data.address}</p>
+              <div>
+                <div className="flex items-center gap-2 text-slate-400 mb-2">
+                  <Ticket size={14} />
+                  <span className="text-xs font-bold uppercase">{template === 'school-classic' ? 'Class' : 'Pass Type'}</span>
                 </div>
-              )}
+                {template === 'school-classic' ? (
+                  <div className="inline-flex items-center px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-sm font-medium border border-slate-200">
+                    {data.className ? `Class ${data.className}${data.section ? ` • ${data.section}` : ''}` : 'Not set'}
+                  </div>
+                ) : (
+                  <div className="inline-flex items-center px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-sm font-medium border border-slate-200">
+                    {data.passType}
+                  </div>
+                )}
+              </div>
 
-              {data.tracks && data.tracks.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 text-slate-400 mb-2">
-                    <ListChecks size={14} />
-                    <span className="text-xs font-bold uppercase">Registered Tracks</span>
-                  </div>
-                  <ul className="space-y-2 max-h-32 overflow-y-auto pr-2 custom-scrollbar">
-                    {data.tracks.map((track, idx) => (
-                      <li key={idx} className="flex items-start gap-2 text-sm text-slate-600">
-                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-1.5 flex-shrink-0"></div>
-                        <span>{track}</span>
-                      </li>
-                    ))}
-                  </ul>
+              {(data.tracks && data.tracks.length > 0) || (data.extras && Object.keys(data.extras).length > 0) ? (
+                <div className="space-y-3">
+                  {data.tracks && data.tracks.length > 0 && (
+                    <>
+                      <div className="flex items-center gap-2 text-slate-400">
+                        <ListChecks size={14} />
+                        <span className="text-xs font-bold uppercase">Registered Tracks</span>
+                      </div>
+                      <ul className="space-y-2 max-h-32 overflow-y-auto pr-2 custom-scrollbar">
+                        {data.tracks.map((track, idx) => (
+                          <li key={idx} className="flex items-start gap-2 text-sm text-slate-600">
+                            <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-1.5 flex-shrink-0"></div>
+                            <span>{track}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+
+
                 </div>
-              )}
+              ) : null}
             </div>
 
+            {/* Modal Footer */}
             <div className="bg-slate-50 p-4 border-t border-slate-100 text-center">
-              <p className="text-xs text-slate-400">Verified by Mani ID Pro System</p>
+              <p className="text-xs text-slate-400">Verified by AgileID Pro System</p>
             </div>
           </div>
         </div>,

@@ -68,10 +68,8 @@ export const parseTSVData = (text: string): Attendee[] => {
       passType: mainPass,
       tracks: tracks,
       role: role,
-      schoolId: columns[1]?.trim() || undefined,
-      className: mainPass,
-      contactNumber: columns[5]?.trim() || undefined,
-      extraFields: {}
+      template: 'conference',
+      extras: {}
     });
   });
 

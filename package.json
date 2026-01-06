@@ -1,5 +1,5 @@
 {
-  "name": "manid-pro",
+  "name": "agileid-pro",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "@google/genai": "^1.30.0",
-    "@imgly/background-removal": "^1.7.0",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^11.8.1",
     "cors": "^2.8.5",
@@ -22,8 +21,7 @@
     "jsonwebtoken": "^9.0.2",
     "jszip": "3.10.1",
     "lucide-react": "^0.554.0",
-    "onnxruntime-web": "1.21.0-dev.20250206-d981b153d3",
-    "qrcode": "^1.5.4",
+    "qrcode.react": "^4.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "xlsx": "^0.18.5"

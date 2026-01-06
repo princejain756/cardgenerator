@@ -16,12 +16,14 @@ const applyTemplate = (template: string, attendee: Attendee): string => {
     name: attendee.name || 'Attendee',
     company: attendee.company || 'Company',
     registrationId: attendee.registrationId || 'ID',
-    schoolId: attendee.schoolId || attendee.registrationId || 'ID',
     passType: attendee.passType || 'Pass',
-    role: attendee.role || 'Attendee'
+    role: attendee.role || 'Attendee',
+    schoolId: attendee.schoolId || attendee.registrationId || 'ID',
+    className: attendee.className || '',
+    section: attendee.section || ''
   };
 
-  return safeTemplate.replace(/\{(name|company|registrationId|schoolId|passType|role)\}/gi, (_, key) => {
+  return safeTemplate.replace(/\{(name|company|registrationId|passType|role|schoolId|className|section)\}/gi, (_, key) => {
     const normalizedKey = key.toLowerCase();
     return replacements[normalizedKey] ?? '';
   });

@@ -1,4 +1,4 @@
-import { Attendee, User } from '../types';
+import { Attendee, User, SavedTemplate } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -66,3 +66,15 @@ export const deleteAttendee = (token: string, id: string) =>
 
 export const deleteAllAttendees = (token: string) =>
   request<void>('/attendees', { method: 'DELETE' }, token);
+
+export const fetchSavedTemplates = (token: string) =>
+  request<SavedTemplate[]>('/templates', { method: 'GET' }, token);
+
+export const saveTemplate = (token: string, data: Partial<SavedTemplate>) =>
+  request<SavedTemplate>('/templates', { method: 'POST', body: JSON.stringify(data) }, token);
+
+export const updateTemplate = (token: string, id: string, data: Partial<SavedTemplate>) =>
+  request<SavedTemplate>('/templates/' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify(data) }, token);
+
+export const deleteTemplate = (token: string, id: string) =>
+  request<void>('/templates/' + encodeURIComponent(id), { method: 'DELETE' }, token);

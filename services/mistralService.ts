@@ -1,6 +1,4 @@
-// Use env key if present, otherwise fall back to the user-provided key.
-// Read OpenRouter API key only from env; do not hardcode fallbacks
-const OPENROUTER_API_KEY = (import.meta.env.VITE_OPENROUTER_API_KEY || '').trim();
+const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY;
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 interface ParsedAttendee {
@@ -8,33 +6,28 @@ interface ParsedAttendee {
   company: string;
   passType: string;
   registrationId: string;
-  eventName?: string;
-  eventSubtitle?: string;
-  eventStartDate?: string;
-  eventEndDate?: string;
-  validFrom?: string;
-  validTo?: string;
-  sponsor?: string;
-  barcodeValue?: string;
-  jobTitle?: string;
-  role?: 'Speaker' | 'Attendee' | 'Organizer';
+  role?: 'Speaker' | 'Attendee' | 'Organizer' | 'Student' | 'Teacher';
   tracks?: string[];
   schoolId?: string;
-  className?: string;
-  section?: string;
+  schoolName?: string;
   fatherName?: string;
   motherName?: string;
-  dob?: string;
+  dateOfBirth?: string;
   contactNumber?: string;
   address?: string;
-  bloodGroup?: string;
-  extraFields?: Record<string, string>;
+  className?: string;
+  section?: string;
+  emergencyContact?: string;
+  extras?: Record<string, string>;
+  template?: 'conference' | 'school-classic' | 'company-id';
 }
 
-export const analyzeFileWithMistral = async (fileContent: string, fileType: string): Promise<{
-  attendees: ParsedAttendee[];
-  metadata?: { schoolName?: string; contactNumber?: string };
-}> => {
+export const analyzeFileWithMistral = async (
+  fileContent: string,
+  fileType: string,
+  customLabels?: Record<string, string>,
+  selectedTemplate?: 'conference' | 'school-classic' | 'company-id'
+): Promise<ParsedAttendee[]> => {
   if (!OPENROUTER_API_KEY) {
     throw new Error('Missing OPENROUTER API key');
   }
@@ -45,61 +38,74 @@ export const analyzeFileWithMistral = async (fileContent: string, fileType: stri
 
     // Take a small sample (first 3 rows) for context
     const sampleLines = lines.slice(0, 3).join('\n');
+    const headerDelimiter = headerLine.includes('\t') ? '\t' : ',';
+    const headerColumns = headerLine.split(headerDelimiter).map((h: string) => h.trim());
 
-    const prompt = `You are analyzing a ${fileType} file. The goal is to auto-map columns so we can build ID cards for students or attendees.
+    // Build custom label hints if provided
+    let customLabelHints = '';
+    if (customLabels && Object.keys(customLabels).length > 0) {
+      const labelMappings = Object.entries(customLabels).map(([key, label]) => `"${label}" -> ${key}`).join(', ');
+      customLabelHints = `\n\nIMPORTANT: The user has renamed some fields. Use these custom labels to help map columns:\n${labelMappings}\n\nFor example, if a column is named "Student Name", map it to "name" if the user renamed the name field to "Student Name".`;
+    }
+
+    // Template-specific hints
+    let templateHint = '';
+    if (selectedTemplate === 'school-classic') {
+      templateHint = '\n\nCONTEXT: The user selected SCHOOL ID template. Prioritize mapping: name, schoolId (roll number), className (class/grade), section, fatherName, motherName, dateOfBirth, address, contactNumber, schoolName.';
+    } else if (selectedTemplate === 'company-id') {
+      templateHint = '\n\nCONTEXT: The user selected CORPORATE template. Prioritize mapping: name, company, role (designation/title), registrationId (employee ID), contactNumber, address.';
+    } else {
+      templateHint = '\n\nCONTEXT: The user selected CONFERENCE template. Prioritize mapping: name, company, passType (ticket type), registrationId, role, tracks.';
+    }
+
+    const prompt = `You are analyzing a ${fileType} file for ID card generation.
+${templateHint}
 
 Sample data (header + 2 rows):
 ${sampleLines}
+${customLabelHints}
 
-IMPORTANT: Also detect school-level information that applies to ALL students (not per-student):
-- School/Company Name (if present in headers or data)
-- School Contact Number (if present)
+Map the column headers to these fields (0-indexed):
+- name: attendee or student name
+- company: company/organization (or leave -1 for school rosters)
+- passType: pass/ticket type or category
+- registrationId: ticket/registration number
+- role: Speaker/Attendee/Organizer/Teacher/Student
+- tracks: workshop/track/session columns (array)
+- schoolId: school-issued ID / roll number
+- schoolName: school name
+- fatherName
+- motherName
+- dateOfBirth
+- contactNumber (phone)
+- address (full address)
+- className (class/grade)
+- section (class section)
+- emergencyContact
+- extras: array of any other useful columns with { "label": "fieldLabel", "index": columnNumber }. Include EVERY column in extras using the header name as the label, even if it also maps to a primary field.
 
-Return JSON ONLY in this exact shape:
+Return ONLY JSON like:
 {
-  "schoolMetadata": {
-    "schoolName": "Sample School Name",
-    "contactNumber": "+91 90000 00000"
-  },
-  "mapping": {
-    "name": 0,
-    "company": 1,
-    "passType": 2,
-    "registrationId": 3,
-    "eventName": 4,
-    "eventSubtitle": 5,
-    "eventStartDate": 6,
-    "eventEndDate": 7,
-    "validFrom": 8,
-    "validTo": 9,
-    "sponsor": 10,
-    "barcodeValue": 11,
-    "jobTitle": 12,
-    "schoolId": 3,
-    "className": 4,
-    "section": 5,
-    "fatherName": 6,
-    "motherName": 7,
-    "dob": 8,
-    "contactNumber": 9,
-    "address": 10,
-    "bloodGroup": 11,
-    "role": -1,
-    "tracks": [13, 14]
-  },
-  "extraColumns": [
-    { "label": "Emergency Contact", "index": 15 },
-    { "label": "House", "index": 16 }
-  ]
+  "name": 2,
+  "company": 3,
+  "passType": 4,
+  "registrationId": 1,
+  "role": -1,
+  "tracks": [5, 6, 7],
+  "schoolId": 8,
+  "schoolName": 9,
+  "fatherName": 10,
+  "motherName": 11,
+  "dateOfBirth": 12,
+  "contactNumber": 13,
+  "address": 14,
+  "className": 15,
+  "section": 16,
+  "emergencyContact": 17,
+  "extras": [{"label": "bloodGroup", "index": 18}, {"label": "city", "index": 4}]
 }
 
-Rules:
-- For schoolMetadata: Extract from column headers or first few data rows if they contain school info
-- Column numbers must be 0-indexed.
-- Use -1 if a field is missing.
-- Prefer the clearest column for each field and do not hallucinate labels.
-- Keep "extraColumns" labels as short, human-friendly names pulled from the header text.
-- Never add prose before or after the JSON.`;
+Use -1 if a field is not present.`;
 
     const response = await fetch(OPENROUTER_API_URL, {
       method: 'POST',
@@ -107,10 +113,10 @@ Rules:
         'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000',
-        'X-Title': 'Mani ID Pro'
+        'X-Title': 'AgileID Pro'
       },
       body: JSON.stringify({
-        model: 'google/gemma-3-27b-it:free',
+        model: 'google/gemma-3n-e4b-it:free',
         messages: [
           {
             role: 'user',
@@ -124,12 +130,8 @@ Rules:
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      const details = JSON.stringify(errorData);
       console.error('OpenRouter API Error Details:', errorData);
-      if (response.status === 401) {
-        throw new Error('OpenRouter key rejected (401). Please confirm the API key is active on openrouter.ai and the domain is whitelisted.');
-      }
-      throw new Error(`OpenRouter API error: ${response.status} ${response.statusText} - ${details}`);
+      throw new Error(`OpenRouter API error: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`);
     }
 
     const data = await response.json();
@@ -155,44 +157,6 @@ Rules:
       throw new Error('Failed to parse AI response');
     }
 
-    const defaultMapping = {
-      name: 0,
-      company: -1,
-      passType: -1,
-      registrationId: -1,
-      schoolId: -1,
-      className: -1,
-      section: -1,
-      fatherName: -1,
-      motherName: -1,
-      dob: -1,
-      contactNumber: -1,
-      address: -1,
-      bloodGroup: -1,
-      role: -1,
-      eventName: -1,
-      eventSubtitle: -1,
-      eventStartDate: -1,
-      eventEndDate: -1,
-      validFrom: -1,
-      validTo: -1,
-      sponsor: -1,
-      barcodeValue: -1,
-      jobTitle: -1,
-      tracks: [] as number[]
-    };
-
-    const mapping = {
-      ...defaultMapping,
-      ...(columnMapping?.mapping || columnMapping || {})
-    };
-
-    const extraColumns = Array.isArray(columnMapping?.extraColumns)
-      ? columnMapping.extraColumns
-        .filter((col: any) => typeof col?.index === 'number' && col.index >= 0)
-        .map((col: any) => ({ label: String(col.label || `Field ${col.index}`).trim(), index: col.index }))
-      : [];
-
     // Now parse all data rows using the column mapping
     const parsedData: ParsedAttendee[] = [];
     const dataLines = lines.slice(1); // Skip header
@@ -201,112 +165,106 @@ Rules:
       const line = dataLines[i].trim();
       if (!line) continue;
 
-      // Split by tab or comma (fallback to comma)
+      // Split by tab or comma
       const delimiter = line.includes('\t') ? '\t' : ',';
       const columns = line.split(delimiter).map(c => c.trim());
 
       // Skip if it looks like a section header
-      if (columns.length < 2) continue;
+      if (columns.length < 3) continue;
 
-      const getVal = (idx?: number) => (typeof idx === 'number' && idx >= 0 && idx < columns.length ? columns[idx] : '').trim();
+      const pick = (idx: number) => (typeof idx === 'number' && idx >= 0 && columns[idx]) ? columns[idx] : '';
 
-      const name = getVal(mapping.name) || `Student ${i + 1}`;
-      const company = getVal(mapping.company) || 'Organization';
-      const passType = getVal(mapping.passType) || getVal(mapping.className) || 'General Entry';
-      const registrationId = getVal(mapping.registrationId) || `AUTO_${i + 1}`;
-      const schoolId = getVal(mapping.schoolId) || registrationId;
-      const className = getVal(mapping.className) || getVal(mapping.passType) || '';
-      const section = getVal(mapping.section);
-      const fatherName = getVal(mapping.fatherName);
-      const motherName = getVal(mapping.motherName);
-      const dob = getVal(mapping.dob);
-      const contactNumber = getVal(mapping.contactNumber);
-      const address = getVal(mapping.address);
-      const bloodGroup = getVal(mapping.bloodGroup);
-      const eventName = getVal(mapping.eventName);
-      const eventSubtitle = getVal(mapping.eventSubtitle);
-      const eventStartDate = getVal(mapping.eventStartDate);
-      const eventEndDate = getVal(mapping.eventEndDate);
-      const validFrom = getVal(mapping.validFrom);
-      const validTo = getVal(mapping.validTo);
-      const sponsor = getVal(mapping.sponsor);
-      const barcodeValue = getVal(mapping.barcodeValue);
-      const jobTitle = getVal(mapping.jobTitle);
+      const name = pick(columnMapping.name) || 'Unknown';
+      const company = pick(columnMapping.company) || pick(columnMapping.schoolName) || 'Self';
+      const passType = pick(columnMapping.passType) || 'Student ID';
+      const registrationId = pick(columnMapping.registrationId) || pick(columnMapping.schoolId) || pick(columnMapping.id) || `AUTO_${i + 1}`;
 
       // Extract tracks from multiple columns
-      const trackColumns = Array.isArray(mapping.tracks)
-        ? mapping.tracks
-        : typeof mapping.tracks === 'number'
-          ? [mapping.tracks]
-          : [];
       const tracks: string[] = [];
-      for (const trackCol of trackColumns) {
-        const trackValue = getVal(trackCol);
-        if (trackValue && trackValue.toLowerCase() !== 'name') {
-          tracks.push(trackValue);
+      if (Array.isArray(columnMapping.tracks)) {
+        for (const trackCol of columnMapping.tracks) {
+          const trackValue = columns[trackCol];
+          if (trackValue && trackValue !== '' && trackValue.toLowerCase() !== 'name') {
+            tracks.push(trackValue);
+          }
         }
       }
 
       // Determine role
-      let role: 'Speaker' | 'Attendee' | 'Organizer' = 'Attendee';
-      const roleColumn = getVal(mapping.role);
-      const combinedText = `${roleColumn} ${passType} ${tracks.join(' ')}`.toLowerCase();
+      let role: 'Speaker' | 'Attendee' | 'Organizer' | 'Student' | 'Teacher' = 'Attendee';
+      const roleColumn = columnMapping.role >= 0 ? columns[columnMapping.role] : '';
       if (roleColumn) {
-        if (roleColumn.toLowerCase().includes('speaker')) role = 'Speaker';
-        else if (roleColumn.toLowerCase().includes('organizer')) role = 'Organizer';
-      } else {
-        if (combinedText.includes('speaker')) role = 'Speaker';
-        else if (combinedText.includes('organizer') || combinedText.includes('staff')) role = 'Organizer';
+        const lowerRole = roleColumn.toLowerCase();
+        if (lowerRole.includes('speaker')) role = 'Speaker';
+        else if (lowerRole.includes('organizer')) role = 'Organizer';
+        else if (lowerRole.includes('teacher')) role = 'Teacher';
+        else if (lowerRole.includes('student')) role = 'Student';
       }
 
-      // Extra fields captured as-is
-      const extraFields: Record<string, string> = {};
-      extraColumns.forEach((col: { label: string; index: number }) => {
-        const value = getVal(col.index);
-        if (value) {
-          extraFields[col.label] = value;
+      const extras: Record<string, string> = {};
+      if (Array.isArray(columnMapping.extras)) {
+        columnMapping.extras.forEach((extra: any) => {
+          const label = extra?.label;
+          const idx = extra?.index;
+          const value = pick(idx);
+          if (label && value) {
+            extras[label] = value;
+          }
+        });
+      }
+
+      // Always include EVERY header/value as extra for custom label matching
+      // Even if a column is mapped to a primary field, we still add it to extras
+      // so that when users rename elements, they can access the original column data
+      headerColumns.forEach((label, idx) => {
+        const value = pick(idx);
+        if (value !== undefined && value !== null && `${value}`.trim() !== '') {
+          extras[label] = value;
         }
       });
+
+      const schoolHints = [
+        pick(columnMapping.schoolId),
+        pick(columnMapping.schoolName),
+        pick(columnMapping.fatherName),
+        pick(columnMapping.motherName),
+        pick(columnMapping.className),
+        pick(columnMapping.section),
+        pick(columnMapping.dateOfBirth),
+        pick(columnMapping.emergencyContact),
+        pick(columnMapping.address)
+      ].filter(Boolean);
+      const passIsStudent = passType.toLowerCase().includes('student');
+      const roleIsStudent = role === 'Student' || role === 'Teacher';
+      const hasSchoolSignals = schoolHints.length > 0 || passIsStudent || roleIsStudent;
+      const companyValue = pick(columnMapping.company);
+      const educationHeaders = headerColumns.some(h => /grade|gpa|class|student|school|university|age/i.test(h));
+      const hasCorporateSignals = !hasSchoolSignals && companyValue && companyValue.toLowerCase() !== 'self';
+      const template: ParsedAttendee['template'] = hasSchoolSignals || educationHeaders ? 'school-classic' : hasCorporateSignals ? 'company-id' : 'conference';
 
       parsedData.push({
         name,
         company,
         passType,
         registrationId,
-        eventName,
-        eventSubtitle,
-        eventStartDate,
-        eventEndDate,
-        validFrom,
-        validTo,
-        sponsor,
-        barcodeValue,
-        jobTitle,
-        schoolId,
-        className,
-        section,
-        fatherName,
-        motherName,
-        dob,
-        contactNumber,
-        address,
-        bloodGroup,
         role,
         tracks,
-        extraFields: Object.keys(extraFields).length ? extraFields : undefined
+        schoolId: pick(columnMapping.schoolId),
+        schoolName: pick(columnMapping.schoolName),
+        fatherName: pick(columnMapping.fatherName),
+        motherName: pick(columnMapping.motherName),
+        dateOfBirth: pick(columnMapping.dateOfBirth),
+        contactNumber: pick(columnMapping.contactNumber),
+        address: pick(columnMapping.address),
+        className: pick(columnMapping.className),
+        section: pick(columnMapping.section),
+        emergencyContact: pick(columnMapping.emergencyContact),
+        extras,
+        template
       });
     }
 
-    // Extract school metadata if provided by AI
-    const metadata = {
-      schoolName: columnMapping?.schoolMetadata?.schoolName,
-      contactNumber: columnMapping?.schoolMetadata?.contactNumber
-    };
-
-    return {
-      attendees: parsedData,
-      metadata: (metadata.schoolName || metadata.contactNumber) ? metadata : undefined
-    };
+    return parsedData;
   } catch (error) {
     console.error('Mistral AI Analysis Error:', error);
     throw error;
@@ -335,10 +293,10 @@ Keep it brief and in plain text format.`;
         'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000',
-        'X-Title': 'Mani ID Pro'
+        'X-Title': 'AgileID Pro'
       },
       body: JSON.stringify({
-        model: 'google/gemma-3-27b-it:free',
+        model: 'google/gemma-3n-e4b-it:free',
         messages: [
           {
             role: 'user',
@@ -361,141 +319,5 @@ Keep it brief and in plain text format.`;
   } catch (error) {
     console.error("Mistral Analysis Error:", error);
     return "Unable to generate AI insights at this time. Please check your connection.";
-  }
-};
-
-export const generateCardLayout = async (
-  attendees: any[],
-  cardType: string
-): Promise<{ header: string[]; table: string[]; footer: string[]; defaults: Record<string, string> }> => {
-  if (!OPENROUTER_API_KEY) {
-    throw new Error('Missing OPENROUTER API key');
-  }
-
-  try {
-    // Analyze available fields from attendees
-    const fieldSet = new Set<string>();
-    attendees.slice(0, 10).forEach(attendee => {
-      Object.keys(attendee).forEach(key => {
-        if (attendee[key] && key !== 'id' && key !== 'image' && key !== 'extraFields') {
-          fieldSet.add(key);
-        }
-      });
-      if (attendee.extraFields) {
-        Object.keys(attendee.extraFields).forEach(key => fieldSet.add(key));
-      }
-    });
-
-    const availableFields = Array.from(fieldSet);
-
-    const prompt = `You are analyzing ID card data to determine the optimal layout for a "${cardType}" card system.
-
-Available fields: ${availableFields.join(', ')}
-
-Create a JSON layout configuration that groups fields into three sections:
-1. **header**: Fields that belong in the card header (logo area) - typically empty or just brand info
-2. **table**: Most important fields to display in the main card body as rows
-3. **footer**: Less critical fields or standard elements like "Class", "Principal Sign"
-
-RULES for School ID Cards:
-- "Class" and "Principal Sign" should ALWAYS be in footer
-- Father's Name, Mother's Name, D.O.B., Contact Number, Blood Group should be in table
-- Name is displayed separately (not in header/table/footer)
-- Address typically goes in footer
-
-Return ONLY valid JSON in this exact format:
-{
-  "header": [],
-  "table": ["fatherName", "motherName", "dob", "contactNumber", "bloodGroup"],
-  "footer": ["address", "className", "section"],
-  "defaults": {
-    "className": "Class",
-    "section": "Section",
-    "footerNote": "Principal Sign."
-  }
-}
-
-Do not include "name", "registrationId", "id", or "image" - these are handled separately.
-Use camelCase for field names exactly as they appear in the available fields list.`;
-
-    const response = await fetch(OPENROUTER_API_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000',
-        'X-Title': 'Mani ID Pro'
-      },
-      body: JSON.stringify({
-        model: 'google/gemma-3-27b-it:free',
-        messages: [
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        temperature: 0.2,
-        max_tokens: 400
-      })
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('OpenRouter API Error Details:', errorData);
-      throw new Error(`OpenRouter API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
-
-    if (!content) {
-      throw new Error('No content received from AI for layout generation');
-    }
-
-    // Parse the layout JSON
-    let layout: any;
-    try {
-      let cleanContent = content.trim();
-      cleanContent = cleanContent.replace(/^```json\s*/i, '').replace(/```\s*$/, '');
-      const jsonStart = cleanContent.indexOf('{');
-      const jsonEnd = cleanContent.lastIndexOf('}');
-      if (jsonStart !== -1 && jsonEnd !== -1) {
-        cleanContent = cleanContent.substring(jsonStart, jsonEnd + 1);
-      }
-      layout = JSON.parse(cleanContent);
-    } catch (parseError) {
-      console.error('Failed to parse layout JSON:', content);
-      // Return a sensible default
-      return {
-        header: [],
-        table: ['fatherName', 'motherName', 'dob', 'contactNumber', 'bloodGroup'],
-        footer: ['address', 'className', 'section'],
-        defaults: {
-          className: 'Class',
-          section: 'Section',
-          footerNote: 'Principal Sign.'
-        }
-      };
-    }
-
-    return {
-      header: Array.isArray(layout.header) ? layout.header : [],
-      table: Array.isArray(layout.table) ? layout.table : [],
-      footer: Array.isArray(layout.footer) ? layout.footer : [],
-      defaults: layout.defaults || {}
-    };
-  } catch (error) {
-    console.error("Layout Generation Error:", error);
-    // Return sensible default for school cards
-    return {
-      header: [],
-      table: ['fatherName', 'motherName', 'dob', 'contactNumber', 'bloodGroup'],
-      footer: ['address', 'className', 'section'],
-      defaults: {
-        className: 'Class',
-        section: 'Section',
-        footerNote: 'Principal Sign.'
-      }
-    };
   }
 };

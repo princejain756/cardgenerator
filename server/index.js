@@ -22,7 +22,7 @@ app.use(express.json({ limit: '15mb' }));
 
 const dataDir = path.join(__dirname, '..', 'data');
 fs.mkdirSync(dataDir, { recursive: true });
-const dbPath = path.join(dataDir, 'manid.db');
+const dbPath = path.join(dataDir, 'agileid.db');
 const db = new Database(dbPath);
 
 // --- Schema Setup ---
@@ -44,21 +44,75 @@ CREATE TABLE IF NOT EXISTS attendees (
   role TEXT,
   tracks TEXT,
   image TEXT,
+  school_id TEXT,
+  school_name TEXT,
+  father_name TEXT,
+  mother_name TEXT,
+  date_of_birth TEXT,
+  contact_number TEXT,
+  address TEXT,
+  class_name TEXT,
+  section TEXT,
+  emergency_contact TEXT,
   extras TEXT,
+  template TEXT,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS saved_templates (
+  id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  icon TEXT DEFAULT 'default',
+  base_template TEXT DEFAULT 'conference',
+  layout TEXT NOT NULL,
+  theme TEXT,
+  custom_labels TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id)
 );
 `);
 
-// Migration helper: ensure extras column exists for older databases
-const ensureColumn = (table, column, type) => {
-  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
-  const hasColumn = columns.some((col) => col.name === column);
-  if (!hasColumn) {
-    db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`).run();
+// Lightweight migration for new school ID fields
+const existingColumns = new Set(db.prepare('PRAGMA table_info(attendees)').all().map((c) => c.name));
+const ensureColumn = (name, definition) => {
+  if (!existingColumns.has(name)) {
+    db.exec(`ALTER TABLE attendees ADD COLUMN ${name} ${definition}`);
   }
 };
 
-ensureColumn('attendees', 'extras', 'TEXT');
+ensureColumn('school_id', 'TEXT');
+ensureColumn('school_name', 'TEXT');
+ensureColumn('father_name', 'TEXT');
+ensureColumn('mother_name', 'TEXT');
+ensureColumn('date_of_birth', 'TEXT');
+ensureColumn('contact_number', 'TEXT');
+ensureColumn('address', 'TEXT');
+ensureColumn('class_name', 'TEXT');
+ensureColumn('section', 'TEXT');
+ensureColumn('emergency_contact', 'TEXT');
+ensureColumn('extras', 'TEXT');
+
+// Migration for saved_templates visibility column
+const templateColumns = new Set(db.prepare('PRAGMA table_info(saved_templates)').all().map((c) => c.name));
+if (!templateColumns.has('visibility')) {
+  db.exec(`ALTER TABLE saved_templates ADD COLUMN visibility TEXT DEFAULT 'private'`);
+}
+ensureColumn('template', 'TEXT');
+ensureColumn('verification_code', 'TEXT');
+ensureColumn('verified', 'INTEGER DEFAULT 1');
+ensureColumn('created_by', 'TEXT');
+
+// Generate unique verification code
+const generateVerificationCode = () => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Removed confusing chars like O, 0, I, 1
+  let code = '';
+  for (let i = 0; i < 8; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+};
 
 // --- Admin bootstrap ---
 const ensureAdmin = () => {
@@ -72,62 +126,8 @@ const ensureAdmin = () => {
 ensureAdmin();
 
 // --- Helpers ---
-const parseExtras = (value) => {
-  if (!value) return {};
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch (err) {
-    console.warn('Unable to parse extras payload', err);
-    return {};
-  }
-};
-
-const buildExtrasPayload = (attendee = {}, existingExtras = {}) => {
-  const merged = {
-    ...existingExtras,
-    eventName: attendee.eventName ?? existingExtras.eventName,
-    eventSubtitle: attendee.eventSubtitle ?? existingExtras.eventSubtitle,
-    eventStartDate: attendee.eventStartDate ?? existingExtras.eventStartDate,
-    eventEndDate: attendee.eventEndDate ?? existingExtras.eventEndDate,
-    validFrom: attendee.validFrom ?? existingExtras.validFrom,
-    validTo: attendee.validTo ?? existingExtras.validTo,
-    sponsor: attendee.sponsor ?? existingExtras.sponsor,
-    barcodeValue: attendee.barcodeValue ?? existingExtras.barcodeValue,
-    jobTitle: attendee.jobTitle ?? existingExtras.jobTitle,
-    schoolId: attendee.schoolId ?? existingExtras.schoolId,
-    className: attendee.className ?? existingExtras.className,
-    section: attendee.section ?? existingExtras.section,
-    fatherName: attendee.fatherName ?? existingExtras.fatherName,
-    motherName: attendee.motherName ?? existingExtras.motherName,
-    dob: attendee.dob ?? existingExtras.dob,
-    contactNumber: attendee.contactNumber ?? existingExtras.contactNumber,
-    address: attendee.address ?? existingExtras.address,
-    bloodGroup: attendee.bloodGroup ?? existingExtras.bloodGroup,
-    extraFields: {
-      ...(existingExtras.extraFields || {}),
-      ...(attendee.extraFields || {})
-    }
-  };
-
-  Object.keys(merged).forEach((key) => {
-    if (merged[key] === undefined || merged[key] === null || merged[key] === '') {
-      delete merged[key];
-    }
-  });
-
-  if (merged.extraFields && Object.keys(merged.extraFields).length === 0) {
-    delete merged.extraFields;
-  }
-
-  return merged;
-};
-
 const toAttendeeResponse = (row) => {
   if (!row) return null;
-  const extras = parseExtras(row.extras);
-  const extraFields = extras.extraFields || {};
-
   return {
     id: row.id,
     registrationId: row.registration_id,
@@ -137,25 +137,21 @@ const toAttendeeResponse = (row) => {
     role: row.role,
     tracks: row.tracks ? JSON.parse(row.tracks) : [],
     image: row.image,
-    eventName: extras.eventName,
-    eventSubtitle: extras.eventSubtitle,
-    eventStartDate: extras.eventStartDate,
-    eventEndDate: extras.eventEndDate,
-    validFrom: extras.validFrom,
-    validTo: extras.validTo,
-    sponsor: extras.sponsor,
-    barcodeValue: extras.barcodeValue,
-    jobTitle: extras.jobTitle,
-    schoolId: extras.schoolId || row.registration_id,
-    className: extras.className,
-    section: extras.section,
-    fatherName: extras.fatherName,
-    motherName: extras.motherName,
-    dob: extras.dob,
-    contactNumber: extras.contactNumber,
-    address: extras.address,
-    bloodGroup: extras.bloodGroup,
-    extraFields
+    schoolId: row.school_id,
+    schoolName: row.school_name,
+    fatherName: row.father_name,
+    motherName: row.mother_name,
+    dateOfBirth: row.date_of_birth,
+    contactNumber: row.contact_number,
+    address: row.address,
+    className: row.class_name,
+    section: row.section,
+    emergencyContact: row.emergency_contact,
+    extras: row.extras ? JSON.parse(row.extras) : {},
+    template: row.template || 'conference',
+    verificationCode: row.verification_code,
+    verified: row.verified === 1,
+    createdBy: row.created_by
   };
 };
 
@@ -214,12 +210,11 @@ app.get('/api/attendees', authMiddleware, (req, res) => {
 app.post('/api/attendees/import', authMiddleware, (req, res) => {
   const { attendees } = req.body || {};
   if (!Array.isArray(attendees)) return res.status(400).json({ message: 'attendees must be an array' });
-  const insert = db.prepare(`INSERT INTO attendees (id, registration_id, name, company, pass_type, role, tracks, image, extras, updated_at)
-    VALUES (@id, @registration_id, @name, @company, @pass_type, @role, @tracks, @image, @extras, CURRENT_TIMESTAMP)`);
-  const replaceAll = db.transaction((items) => {
+  const insert = db.prepare(`INSERT INTO attendees (id, registration_id, name, company, pass_type, role, tracks, image, school_id, school_name, father_name, mother_name, date_of_birth, contact_number, address, class_name, section, emergency_contact, extras, template, verification_code, verified, created_by, updated_at)
+    VALUES (@id, @registration_id, @name, @company, @pass_type, @role, @tracks, @image, @school_id, @school_name, @father_name, @mother_name, @date_of_birth, @contact_number, @address, @class_name, @section, @emergency_contact, @extras, @template, @verification_code, @verified, @created_by, CURRENT_TIMESTAMP)`);
+  const replaceAll = db.transaction((items, username) => {
     db.prepare('DELETE FROM attendees').run();
     items.forEach((a) => {
-      const extrasPayload = buildExtrasPayload(a);
       const payload = {
         id: a.id || `att-${Date.now()}-${Math.random().toString(16).slice(2)}`,
         registration_id: a.registrationId || '',
@@ -229,49 +224,35 @@ app.post('/api/attendees/import', authMiddleware, (req, res) => {
         role: a.role || 'Attendee',
         tracks: JSON.stringify(a.tracks || []),
         image: a.image || null,
-        extras: Object.keys(extrasPayload).length ? JSON.stringify(extrasPayload) : null
+        school_id: a.schoolId || '',
+        school_name: a.schoolName || '',
+        father_name: a.fatherName || '',
+        mother_name: a.motherName || '',
+        date_of_birth: a.dateOfBirth || '',
+        contact_number: a.contactNumber || '',
+        address: a.address || '',
+        class_name: a.className || '',
+        section: a.section || '',
+        emergency_contact: a.emergencyContact || '',
+        extras: JSON.stringify(a.extras || {}),
+        template: a.template || 'conference',
+        verification_code: generateVerificationCode(),
+        verified: 1,
+        created_by: username
       };
       insert.run(payload);
     });
   });
-  replaceAll(attendees);
+  replaceAll(attendees, req.user.username);
   res.json({ count: attendees.length });
 });
 
 app.patch('/api/attendees/bulk', authMiddleware, (req, res) => {
   const { ids, data } = req.body || {};
   if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ message: 'ids required' });
-  const allowed = [
-    'registrationId',
-    'name',
-    'company',
-    'passType',
-    'role',
-    'tracks',
-    'image',
-    'eventName',
-    'eventSubtitle',
-    'eventStartDate',
-    'eventEndDate',
-    'validFrom',
-    'validTo',
-    'sponsor',
-    'barcodeValue',
-    'jobTitle',
-    'schoolId',
-    'className',
-    'section',
-    'fatherName',
-    'motherName',
-    'dob',
-    'contactNumber',
-    'address',
-    'bloodGroup',
-    'extraFields'
-  ];
+  const allowed = ['registrationId', 'name', 'company', 'passType', 'role', 'tracks', 'image', 'schoolId', 'schoolName', 'fatherName', 'motherName', 'dateOfBirth', 'contactNumber', 'address', 'className', 'section', 'emergencyContact', 'extras', 'template'];
   const updates = Object.keys(data || {}).filter((k) => allowed.includes(k));
   if (updates.length === 0) return res.status(400).json({ message: 'No valid fields to update' });
-
   const updateStmt = db.prepare(`UPDATE attendees SET 
     registration_id = COALESCE(@registrationId, registration_id),
     name = COALESCE(@name, name),
@@ -280,17 +261,22 @@ app.patch('/api/attendees/bulk', authMiddleware, (req, res) => {
     role = COALESCE(@role, role),
     tracks = COALESCE(@tracks, tracks),
     image = COALESCE(@image, image),
+    school_id = COALESCE(@schoolId, school_id),
+    school_name = COALESCE(@schoolName, school_name),
+    father_name = COALESCE(@fatherName, father_name),
+    mother_name = COALESCE(@motherName, mother_name),
+    date_of_birth = COALESCE(@dateOfBirth, date_of_birth),
+    contact_number = COALESCE(@contactNumber, contact_number),
+    address = COALESCE(@address, address),
+    class_name = COALESCE(@className, class_name),
+    section = COALESCE(@section, section),
+    emergency_contact = COALESCE(@emergencyContact, emergency_contact),
     extras = COALESCE(@extras, extras),
+    template = COALESCE(@template, template),
     updated_at = CURRENT_TIMESTAMP
     WHERE id = @id`);
-
   const tx = db.transaction((items) => {
     items.forEach((id) => {
-      const existing = db.prepare('SELECT * FROM attendees WHERE id = ?').get(id);
-      const existingExtras = parseExtras(existing?.extras);
-      const nextExtras = buildExtrasPayload(data, existingExtras);
-      const extras = Object.keys(nextExtras).length ? JSON.stringify(nextExtras) : existing?.extras;
-
       updateStmt.run({
         id,
         registrationId: data.registrationId,
@@ -300,7 +286,18 @@ app.patch('/api/attendees/bulk', authMiddleware, (req, res) => {
         role: data.role,
         tracks: data.tracks ? JSON.stringify(data.tracks) : undefined,
         image: data.image,
-        extras
+        schoolId: data.schoolId,
+        schoolName: data.schoolName,
+        fatherName: data.fatherName,
+        motherName: data.motherName,
+        dateOfBirth: data.dateOfBirth,
+        contactNumber: data.contactNumber,
+        address: data.address,
+        className: data.className,
+        section: data.section,
+        emergencyContact: data.emergencyContact,
+        extras: data.extras ? JSON.stringify(data.extras) : undefined,
+        template: data.template
       });
     });
   });
@@ -311,11 +308,6 @@ app.patch('/api/attendees/bulk', authMiddleware, (req, res) => {
 app.patch('/api/attendees/:id', authMiddleware, (req, res) => {
   const { id } = req.params;
   const payload = req.body || {};
-  const existingRow = db.prepare('SELECT * FROM attendees WHERE id = ?').get(id);
-  const existingExtras = parseExtras(existingRow?.extras);
-  const nextExtras = buildExtrasPayload(payload, existingExtras);
-  const extras = Object.keys(nextExtras).length ? JSON.stringify(nextExtras) : existingRow?.extras;
-
   const update = db.prepare(`UPDATE attendees SET 
     registration_id = COALESCE(@registrationId, registration_id),
     name = COALESCE(@name, name),
@@ -324,7 +316,18 @@ app.patch('/api/attendees/:id', authMiddleware, (req, res) => {
     role = COALESCE(@role, role),
     tracks = COALESCE(@tracks, tracks),
     image = COALESCE(@image, image),
+    school_id = COALESCE(@schoolId, school_id),
+    school_name = COALESCE(@schoolName, school_name),
+    father_name = COALESCE(@fatherName, father_name),
+    mother_name = COALESCE(@motherName, mother_name),
+    date_of_birth = COALESCE(@dateOfBirth, date_of_birth),
+    contact_number = COALESCE(@contactNumber, contact_number),
+    address = COALESCE(@address, address),
+    class_name = COALESCE(@className, class_name),
+    section = COALESCE(@section, section),
+    emergency_contact = COALESCE(@emergencyContact, emergency_contact),
     extras = COALESCE(@extras, extras),
+    template = COALESCE(@template, template),
     updated_at = CURRENT_TIMESTAMP
     WHERE id = @id`);
   update.run({
@@ -336,7 +339,18 @@ app.patch('/api/attendees/:id', authMiddleware, (req, res) => {
     role: payload.role,
     tracks: payload.tracks ? JSON.stringify(payload.tracks) : undefined,
     image: payload.image,
-    extras
+    schoolId: payload.schoolId,
+    schoolName: payload.schoolName,
+    fatherName: payload.fatherName,
+    motherName: payload.motherName,
+    dateOfBirth: payload.dateOfBirth,
+    contactNumber: payload.contactNumber,
+    address: payload.address,
+    className: payload.className,
+    section: payload.section,
+    emergencyContact: payload.emergencyContact,
+    extras: payload.extras ? JSON.stringify(payload.extras) : undefined,
+    template: payload.template
   });
   const updated = db.prepare('SELECT * FROM attendees WHERE id = ?').get(id);
   res.json(toAttendeeResponse(updated));
@@ -351,6 +365,247 @@ app.delete('/api/attendees/:id', authMiddleware, (req, res) => {
 app.delete('/api/attendees', authMiddleware, (req, res) => {
   db.prepare('DELETE FROM attendees').run();
   res.status(204).end();
+});
+
+// --- Saved Templates ---
+app.get('/api/templates', authMiddleware, (req, res) => {
+  // Get user's private templates + all public templates
+  const rows = db.prepare(`
+    SELECT st.*, u.username as owner_name 
+    FROM saved_templates st 
+    LEFT JOIN users u ON st.user_id = u.id
+    WHERE st.user_id = ? OR st.visibility = 'public' 
+    ORDER BY st.updated_at DESC
+  `).all(req.user.id);
+  res.json(rows.map(row => ({
+    id: row.id,
+    name: row.name,
+    icon: row.icon || 'default',
+    baseTemplate: row.base_template,
+    layout: JSON.parse(row.layout || '{}'),
+    theme: row.theme ? JSON.parse(row.theme) : null,
+    customLabels: row.custom_labels ? JSON.parse(row.custom_labels) : {},
+    visibility: row.visibility || 'private',
+    isOwner: row.user_id === req.user.id,
+    ownerName: row.owner_name,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  })));
+});
+
+app.post('/api/templates', authMiddleware, (req, res) => {
+  const { name, icon, baseTemplate, layout, theme, customLabels, visibility } = req.body || {};
+  if (!name || !layout) {
+    return res.status(400).json({ message: 'Name and layout are required' });
+  }
+
+  const id = `tpl-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  const templateVisibility = visibility === 'public' ? 'public' : 'private';
+
+  db.prepare(`INSERT INTO saved_templates (id, user_id, name, icon, base_template, layout, theme, custom_labels, visibility) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    id,
+    req.user.id,
+    name,
+    icon || 'default',
+    baseTemplate || 'conference',
+    JSON.stringify(layout),
+    theme ? JSON.stringify(theme) : null,
+    customLabels ? JSON.stringify(customLabels) : null,
+    templateVisibility
+  );
+
+  res.status(201).json({
+    id,
+    name,
+    icon: icon || 'default',
+    baseTemplate: baseTemplate || 'conference',
+    visibility: templateVisibility,
+    message: 'Template saved successfully'
+  });
+});
+
+app.patch('/api/templates/:id', authMiddleware, (req, res) => {
+  const { id } = req.params;
+  const { name, icon, layout, theme, customLabels } = req.body || {};
+
+  // Check ownership
+  const existing = db.prepare('SELECT * FROM saved_templates WHERE id = ? AND user_id = ?').get(id, req.user.id);
+  if (!existing) {
+    return res.status(404).json({ message: 'Template not found' });
+  }
+
+  db.prepare(`UPDATE saved_templates SET 
+    name = COALESCE(?, name),
+    icon = COALESCE(?, icon),
+    layout = COALESCE(?, layout),
+    theme = COALESCE(?, theme),
+    custom_labels = COALESCE(?, custom_labels),
+    updated_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND user_id = ?`).run(
+    name,
+    icon,
+    layout ? JSON.stringify(layout) : null,
+    theme ? JSON.stringify(theme) : null,
+    customLabels ? JSON.stringify(customLabels) : null,
+    id,
+    req.user.id
+  );
+
+  res.json({ message: 'Template updated successfully' });
+});
+
+app.delete('/api/templates/:id', authMiddleware, (req, res) => {
+  const { id } = req.params;
+  const result = db.prepare('DELETE FROM saved_templates WHERE id = ? AND user_id = ?').run(id, req.user.id);
+  if (result.changes === 0) {
+    return res.status(404).json({ message: 'Template not found' });
+  }
+  res.status(204).end();
+});
+
+
+// --- PUBLIC Card Verification Endpoint (No Auth Required) ---
+app.get('/api/verify/:code', (req, res) => {
+  const { code } = req.params;
+  if (!code || code.length < 6) {
+    return res.status(400).json({
+      verified: false,
+      message: 'Invalid verification code'
+    });
+  }
+
+  // Look up the card by verification code
+  const card = db.prepare('SELECT * FROM attendees WHERE verification_code = ?').get(code.toUpperCase());
+
+  if (!card) {
+    return res.json({
+      verified: false,
+      message: 'Card not found. This ID card is not registered in our system.',
+      code: code.toUpperCase()
+    });
+  }
+
+  if (card.verified !== 1) {
+    return res.json({
+      verified: false,
+      message: 'This card has been invalidated.',
+      code: code.toUpperCase()
+    });
+  }
+
+  // Card is valid - return basic info (not sensitive data)
+  res.json({
+    verified: true,
+    message: 'Card verified successfully!',
+    code: code.toUpperCase(),
+    card: {
+      name: card.name,
+      company: card.company || card.school_name,
+      role: card.role,
+      registrationId: card.registration_id,
+      template: card.template,
+      createdBy: card.created_by
+    }
+  });
+});
+
+// Verification page (serves HTML for QR code scan landing)
+app.get('/verify/:code', (req, res) => {
+  const { code } = req.params;
+  res.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Card Verification - AgileID Pro</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: white;
+      border-radius: 24px;
+      padding: 40px;
+      max-width: 400px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+    .loader {
+      width: 60px;
+      height: 60px;
+      border: 4px solid #e2e8f0;
+      border-top-color: #4f46e5;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .status { font-size: 18px; color: #64748b; margin-bottom: 10px; }
+    .code { font-family: monospace; font-size: 24px; font-weight: bold; color: #1e293b; letter-spacing: 4px; }
+    .verified { color: #10b981; }
+    .not-verified { color: #ef4444; }
+    .icon { font-size: 64px; margin-bottom: 16px; }
+    .name { font-size: 24px; font-weight: 600; color: #1e293b; margin: 16px 0 8px; }
+    .company { font-size: 16px; color: #64748b; margin-bottom: 4px; }
+    .role { font-size: 14px; color: #94a3b8; }
+    .badge { display: inline-block; padding: 6px 16px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-top: 16px; }
+    .badge.verified { background: #d1fae5; color: #059669; }
+    .badge.not-verified { background: #fee2e2; color: #dc2626; }
+    .footer { margin-top: 24px; font-size: 12px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="card" id="result">
+    <div class="loader"></div>
+    <p class="status">Verifying card...</p>
+    <p class="code">${code.toUpperCase()}</p>
+  </div>
+  <script>
+    fetch('/api/verify/${code}')
+      .then(r => r.json())
+      .then(data => {
+        const el = document.getElementById('result');
+        if (data.verified) {
+          el.innerHTML = \`
+            <div class="icon">✅</div>
+            <span class="badge verified">VERIFIED</span>
+            <p class="name">\${data.card.name}</p>
+            <p class="company">\${data.card.company || ''}</p>
+            <p class="role">\${data.card.role || ''}</p>
+            <p style="margin-top:16px;font-size:12px;color:#94a3b8;">ID: \${data.card.registrationId || 'N/A'}</p>
+            <p class="code" style="margin-top:20px;font-size:16px;">\${data.code}</p>
+            <p class="footer">Verified by AgileID Pro</p>
+          \`;
+        } else {
+          el.innerHTML = \`
+            <div class="icon">❌</div>
+            <span class="badge not-verified">NOT VERIFIED</span>
+            <p style="margin-top:16px;color:#64748b;">\${data.message}</p>
+            <p class="code" style="margin-top:20px;">\${data.code}</p>
+            <p class="footer">This card could not be verified</p>
+          \`;
+        }
+      })
+      .catch(err => {
+        document.getElementById('result').innerHTML = \`
+          <div class="icon">⚠️</div>
+          <p style="color:#64748b;">Error verifying card</p>
+        \`;
+      });
+  </script>
+</body>
+</html>
+  `);
 });
 
 app.listen(PORT, () => {
