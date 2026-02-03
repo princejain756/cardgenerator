@@ -691,7 +691,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
                             <input
                                 type="range"
                                 min="10"
-                                max="40"
+                                max="100"
                                 value={pos.width || 20}
                                 onChange={(e) => updateImageSize(el.key, parseInt(e.target.value))}
                                 className="flex-1 accent-indigo-500"
@@ -908,11 +908,13 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
                             cursor: isDragging ? 'grabbing' : 'default'
                         }}
                     >
-                        {/* Header gradient preview */}
-                        <div
-                            className={`absolute inset-x-0 top-0 h-32 bg-gradient-to-br ${localTheme.headerGradient}`}
-                            style={{ borderRadius: `${localTheme.borderRadius}px ${localTheme.borderRadius}px 0 0` }}
-                        />
+                        {/* Header gradient preview - hidden for blank template */}
+                        {templateType !== 'blank' && (
+                            <div
+                                className={`absolute inset-x-0 top-0 h-32 bg-gradient-to-br ${localTheme.headerGradient}`}
+                                style={{ borderRadius: `${localTheme.borderRadius}px ${localTheme.borderRadius}px 0 0` }}
+                            />
+                        )}
 
                         <div className="template-canvas-grid" />
 
@@ -973,9 +975,41 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
                                         fontWeight: el.key === 'name' ? 700 : 400,
                                     }}
                                     onMouseDown={(e) => handleMouseDown(e, el.key)}
+                                    onDoubleClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditingLabel(el.key);
+                                    }}
+                                    title="Double-click to edit label"
                                 >
                                     <div className="drag-handle" />
-                                    <span className="whitespace-nowrap">{getElementValue(el.key)}</span>
+                                    {editingLabel === el.key ? (
+                                        <input
+                                            type="text"
+                                            className="bg-white border border-indigo-500 rounded px-2 py-0.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400 min-w-[80px]"
+                                            style={{ fontSize: pos.fontSize ? `${pos.fontSize}px` : '14px' }}
+                                            defaultValue={customLabels[el.key] || el.label}
+                                            autoFocus
+                                            onClick={(e) => e.stopPropagation()}
+                                            onMouseDown={(e) => e.stopPropagation()}
+                                            onBlur={(e) => {
+                                                const newLabel = e.target.value.trim();
+                                                if (newLabel && newLabel !== el.label) {
+                                                    setCustomLabels(prev => ({ ...prev, [el.key]: newLabel }));
+                                                }
+                                                setEditingLabel(null);
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    (e.target as HTMLInputElement).blur();
+                                                }
+                                                if (e.key === 'Escape') {
+                                                    setEditingLabel(null);
+                                                }
+                                            }}
+                                        />
+                                    ) : (
+                                        <span className="whitespace-nowrap">{getElementValue(el.key)}</span>
+                                    )}
                                 </div>
                             );
                         })}

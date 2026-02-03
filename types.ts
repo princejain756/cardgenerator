@@ -58,7 +58,7 @@ export interface SavedTemplate {
   updatedAt?: string;
 }
 
-export type BadgeTemplate = 'conference' | 'school-classic' | 'company-id';
+export type BadgeTemplate = 'conference' | 'school-classic' | 'company-id' | 'blank';
 
 // ============ NEW TYPES FOR DRAG-AND-DROP CUSTOMIZATION ============
 
@@ -73,12 +73,12 @@ export interface ElementPosition {
 }
 
 export interface TemplateLayout {
-  name: ElementPosition;
-  image: ElementPosition;
-  company: ElementPosition;
-  registrationId: ElementPosition;
+  name?: ElementPosition;
+  image?: ElementPosition;
+  company?: ElementPosition;
+  registrationId?: ElementPosition;
   role?: ElementPosition;
-  qrCode: ElementPosition;
+  qrCode?: ElementPosition;
   // School-specific
   fatherName?: ElementPosition;
   motherName?: ElementPosition;
@@ -86,6 +86,8 @@ export interface TemplateLayout {
   className?: ElementPosition;
   contactNumber?: ElementPosition;
   address?: ElementPosition;
+  // Allow custom elements with any key
+  [key: string]: ElementPosition | undefined;
 }
 
 export interface CardTheme {
@@ -243,5 +245,8 @@ export const DEFAULT_LAYOUTS: Record<BadgeTemplate, TemplateLayout> = {
     contactNumber: { x: 50, y: 72, fontSize: 11, textAlign: 'center', visible: true },
     address: { x: 50, y: 80, fontSize: 10, textAlign: 'center', visible: true },
     qrCode: { x: 50, y: 92, width: 14, visible: true },
+  },
+  'blank': {
+    // Empty layout - users design from scratch
   },
 };

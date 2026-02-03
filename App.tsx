@@ -48,10 +48,20 @@ const App: React.FC = () => {
   const [downloadFormat, setDownloadFormat] = useState<'png' | 'jpg'>('png');
   const [filenameTemplate] = useState('{name}_IDCARD');
 
-  // Template & Theme
-  const [activeTemplate, setActiveTemplate] = useState<BadgeTemplate>('conference');
+  // Template & Theme - Load from localStorage for persistence
+  const [activeTemplate, setActiveTemplate] = useState<BadgeTemplate>(() => {
+    const saved = localStorage.getItem('agileIdActiveTemplate');
+    return (saved as BadgeTemplate) || 'conference';
+  });
   const [activeTheme, setActiveTheme] = useState<CardTheme>(DEFAULT_THEMES[0]);
-  const [customLayout, setCustomLayout] = useState<TemplateLayout>(DEFAULT_LAYOUTS['conference']);
+  const [customLayout, setCustomLayout] = useState<TemplateLayout>(() => {
+    const savedLayout = localStorage.getItem('agileIdCustomLayout');
+    if (savedLayout) {
+      try { return JSON.parse(savedLayout); } catch { /* ignore */ }
+    }
+    const savedTemplate = localStorage.getItem('agileIdActiveTemplate');
+    return DEFAULT_LAYOUTS[(savedTemplate as BadgeTemplate) || 'conference'];
+  });
   const [templateEditorOpen, setTemplateEditorOpen] = useState(false);
   const [savedTemplates, setSavedTemplates] = useState<SavedTemplate[]>([]);
   const [customLabels, setCustomLabels] = useState<Record<string, string>>({});
@@ -414,6 +424,9 @@ const App: React.FC = () => {
     setEditingTemplateName('');
     setCustomLayout(DEFAULT_LAYOUTS[template]);
     setCustomLabels({});
+    // Save to localStorage for persistence
+    localStorage.setItem('agileIdActiveTemplate', template);
+    localStorage.setItem('agileIdCustomLayout', JSON.stringify(DEFAULT_LAYOUTS[template]));
   };
 
   const handleEditTemplate = (template: SavedTemplate) => {

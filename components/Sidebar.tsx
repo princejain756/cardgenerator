@@ -57,6 +57,7 @@ const templateOptions: { id: BadgeTemplate; name: string; icon: string; desc: st
     { id: 'conference', name: 'Conference', icon: '🎫', desc: 'Events & conferences' },
     { id: 'school-classic', name: 'School ID', icon: '🎓', desc: 'Student ID cards' },
     { id: 'company-id', name: 'Corporate', icon: '💼', desc: 'Employee badges' },
+    { id: 'blank', name: 'Blank Template', icon: '📄', desc: 'Design from scratch' },
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({

@@ -296,27 +296,31 @@ export const IDCard: React.FC<IDCardProps> = ({
 
     return (
       <>
-        {/* Lanyard hole */}
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 w-16 h-3 bg-slate-100 rounded-full z-20 shadow-inner flex justify-center items-center">
-          <div className="w-10 h-1.5 bg-slate-300 rounded-full"></div>
-        </div>
-
-        {/* Header gradient (top 26%) */}
-        <div className={`absolute top-0 left-0 right-0 h-[26%] bg-gradient-to-br ${accentGradient}`}>
-          <div className="absolute inset-0 opacity-20">
-            <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <pattern id={`grid-custom-${data.id}`} width="20" height="20" patternUnits="userSpaceOnUse">
-                  <path d="M 20 0 L 0 0 0 20" fill="none" stroke="white" strokeWidth="1" />
-                </pattern>
-              </defs>
-              <rect width="100%" height="100%" fill={`url(#grid-custom-${data.id})`} />
-            </svg>
+        {/* Lanyard hole - hidden for blank template */}
+        {template !== 'blank' && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 w-16 h-3 bg-slate-100 rounded-full z-20 shadow-inner flex justify-center items-center">
+            <div className="w-10 h-1.5 bg-slate-300 rounded-full"></div>
           </div>
-        </div>
+        )}
 
-        {/* White body area */}
-        <div className="absolute top-[26%] left-0 right-0 bottom-0 bg-white rounded-b-2xl" />
+        {/* Header gradient (top 26%) - hidden for blank template */}
+        {template !== 'blank' && (
+          <div className={`absolute top-0 left-0 right-0 h-[26%] bg-gradient-to-br ${accentGradient}`}>
+            <div className="absolute inset-0 opacity-20">
+              <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <pattern id={`grid-custom-${data.id}`} width="20" height="20" patternUnits="userSpaceOnUse">
+                    <path d="M 20 0 L 0 0 0 20" fill="none" stroke="white" strokeWidth="1" />
+                  </pattern>
+                </defs>
+                <rect width="100%" height="100%" fill={`url(#grid-custom-${data.id})`} />
+              </svg>
+            </div>
+          </div>
+        )}
+
+        {/* White body area - full height for blank template */}
+        <div className={`absolute left-0 right-0 bottom-0 bg-white ${template === 'blank' ? 'top-0 rounded-2xl' : 'top-[26%] rounded-b-2xl'}`} />
 
         {/* Position-based elements rendering */}
         <div className="absolute inset-0 overflow-hidden">
@@ -727,9 +731,9 @@ export const IDCard: React.FC<IDCardProps> = ({
         {/* Action Buttons (Hidden in Print and Export, Visible on Hover) */}
         <div className="absolute top-4 right-4 z-30 no-print no-export opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-2">
           <button
-            onClick={(e) => { e.stopPropagation(); onOpenTemplateEditor?.(); }}
+            onClick={(e) => { e.stopPropagation(); onEdit(); }}
             className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-md border border-white/40 flex items-center justify-center text-white hover:bg-white hover:text-indigo-600 transition-colors shadow-sm"
-            title="Customize Layout"
+            title="Edit Attendee"
           >
             <Edit2 size={14} />
           </button>
@@ -751,7 +755,10 @@ export const IDCard: React.FC<IDCardProps> = ({
 
         {/* Use custom layout renderer when layout is provided, otherwise fall back to template-based renderers */}
         {layout ? renderCustomLayoutCard() : (
-          template === 'school-classic' ? renderSchoolCard() : template === 'company-id' ? renderCompanyCard() : renderConferenceCard()
+          template === 'blank' ? (
+            /* Blank template - just a white canvas */
+            <div className="w-full h-full bg-white rounded-2xl" />
+          ) : template === 'school-classic' ? renderSchoolCard() : template === 'company-id' ? renderCompanyCard() : renderConferenceCard()
         )}
       </div>
 
